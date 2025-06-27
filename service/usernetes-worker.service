@@ -1,0 +1,19 @@
+[Unit]
+Description=User Space Kubernetes Worker (Usernetes)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/workspace/usernetes/service/usernetes-start-worker.sh podman
+# Environment="USERNETES_CONTAINER_TECH_ARG=podman"
+LimitMEMLOCK=infinity
+
+# Logging
+StandardOutput=file:/usr/workspace/usernetes/worker.log
+StandardError=file:/usr/workspace/usernetes/worker.log
+KillMode=process
+
+# Start when the user's session starts
+[Install]
+WantedBy=default.target
+
