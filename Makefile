@@ -81,6 +81,8 @@ render: check-preflight
 
 .PHONY: up
 up: check-preflight
+	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
+	sed -i "s/default_network/$(HOSTNAME)/g" docker-compose.yaml
 	$(COMPOSE) up --build -d
 
 .PHONY: down
@@ -132,7 +134,7 @@ join-command:
 .PHONY: kubeadm-init
 kubeadm-init:
 	$(NODE_SHELL) sh -euc "envsubst </usernetes/kubeadm-config.yaml >/tmp/kubeadm-config.yaml"
-	$(NODE_SHELL) kubeadm init --config /tmp/kubeadm-config.yaml --skip-token-print
+	$(NODE_SHELL) kubeadm init --ignore-preflight-errors all --config /tmp/kubeadm-config.yaml --skip-token-print
 	$(MAKE) sync-external-ip
 	@echo "# Run 'make join-command' to print the join command"
 
@@ -142,6 +144,8 @@ sync-external-ip:
 
 .PHONY: kubeadm-join
 kubeadm-join:
+	# Our kernel is too old for usernetes, so we need this
+	sed -i "s/--token/--ignore-preflight-errors=all --token/g" join-command
 	$(NODE_SHELL) /bin/bash /usernetes/join-command
 	@echo "# Run 'make sync-external-ip' on the control plane"
 
@@ -151,4 +155,8 @@ kubeadm-reset:
 
 .PHONY: install-flannel
 install-flannel:
-	$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh
+	# Kubernetes 1.30.x removed the check for br_netfilter from kubeadm.
+	# Flannel over version 0.25 checks for br_netfilter, which won't be in the podman node.
+	# We don't actually need it there, just on the physical node, so we use newer K8s and older flannel
+	$(NODE_SHELL) kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.1/kube-flannel.yml
+	#$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh
