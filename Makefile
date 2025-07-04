@@ -84,6 +84,7 @@ up: check-preflight
 	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
 	sed -i "s/default_network/$(HOSTNAME)/g" docker-compose.yaml
 	$(COMPOSE) up --build -d
+	$(NODE_SHELL) /bin/bash /usernetes/Makefile.d/dra/update-containerd.sh
 
 .PHONY: down
 down:
@@ -110,6 +111,15 @@ ifeq ($(shell command -v kubectl 2> /dev/null),)
 	@echo "# To install kubectl, run the following command too:"
 	@echo "make kubectl"
 endif
+
+.PHONY: kubeconfig
+dra:
+	$(NODE_SHELL) kubectl apply -f /usernetes/Makefile.d/dra/rbac.yaml
+	# These are needed if you want ibv_devinfo to work
+	#$(CONTAINER_ENGINE) exec dranet-driver mkdir -p /etc/libibverbs.d
+	#$(CONTAINER_ENGINE) exec dranet-driver echo "driver mlx4" >> /etc/libibverbs.d/mlx4.driver
+	#$(CONTAINER_ENGINE) exec dranet-driver echo "driver mlx5" >> /etc/libibverbs.d/mlx5.driver
+
 
 .PHONY: kubectl
 kubectl:

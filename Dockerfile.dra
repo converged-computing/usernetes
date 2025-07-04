@@ -1,0 +1,17 @@
+FROM ghcr.io/google/dranet:v0.4.0 AS builder
+
+# podman build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile.dra -t usernetes_dra $(pwd)
+# docker build -t ghcr.io/converged-computing/usernetes:dra .
+# make up && make kubeadm-init && make dra && make kubeconfig && kubectl apply -f Makefile.d/dra/rbac.yaml && podman restart dranet-driver
+
+# We can likely use ubuntu:24.04, I am reproducing the node environment as much as possible.
+FROM docker.io/kindest/node:v1.33.0@sha256:91e9ed777db80279c22d1d1068c091b899b2078506e4a0f797fbf6e397c0b0b2
+RUN apt-get update && apt-get install -y ca-certificates
+COPY cspca.llnl.gov.cer.pem /usr/local/share/ca-certificates/
+COPY cspca.cer.pem /usr/local/share/ca-certificates/
+RUN update-ca-certificates
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends kmod libibverbs-dev librdmacm-dev rdma-core libnl-3-dev ibverbs-utils libnl-route-3-dev 
+
+COPY --from=builder /dranet /dranet
+ENTRYPOINT ["/dranet"]

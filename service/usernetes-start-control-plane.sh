@@ -5,13 +5,23 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-06-26-2025
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-dra
 
 # We will copy join command here
 shared_join_command_dir="/usr/workspace/usernetes"
 
 # The user needs to run the setup script
 USERNAME=$(whoami)
+
+# Logging functions for consistency (like Akihiro!)
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
+}
+
+error_exit() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
+    exit 1
+}
 
 # This is way a lot for just deriving home, but I'm not convinced it will always
 # be defined in the environment
@@ -36,16 +46,6 @@ which podman-compose
 # Write to /tmp but scoped to the username
 # We don't want to use /var because that is a memory based fs
 export TMPDIR="/tmp/${USERNAME}"
-
-# Logging functions for consistency (like Akihiro!)
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
-}
-
-error_exit() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
-    exit 1
-}
 
 install_kubectl() {
     if ! command -v kubectl > /dev/null; then
@@ -131,6 +131,7 @@ sleep 3 # Allow filesystem operations to settle if needed
 
 log "👷 Building Usernetes container image 'usernetes_node'"
 ${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile -t usernetes_node $(pwd)
+${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile.dra -t usernetes_dra $(pwd)
 
 cleanup() {
     log "🧹 Cleaning up old networks or volumes (best effort)"
@@ -150,8 +151,15 @@ if ! make up; then
 fi
 sleep 3
 
+
 log "🔐 Running kubeadm-init with 'make kubeadm-init'"
 if ! make kubeadm-init; then
+    error_exit "Failed 'make kubeadm-init'."
+fi
+sleep 3
+
+log "👾 Setting up dynamic resource allocation"
+if ! make dra; then
     error_exit "Failed 'make kubeadm-init'."
 fi
 sleep 3
@@ -170,6 +178,10 @@ chmod 600 "${KUBECONFIG}"
 # The user will likely want to do this.
 # source <(kubectl completion bash)
 sleep 3
+
+log "🥷 Install rbac for dranet-driver"
+kubectl apply -f Makefile.d/dra/rbac.yaml
+${container_runtime_path} restart dranet-driver 
 
 # Get control plane node name robustly
 log "🍑 Untainting control plane and labeling node"

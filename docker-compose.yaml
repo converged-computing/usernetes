@@ -10,6 +10,8 @@ services:
     networks:
       default_network:
         ipv4_address: ${NODE_IP}
+    expose:
+      - "${PORT_KUBE_APISERVER}"
     ports:
       # <host>:<container>
       # etcd (default: 2379)
@@ -27,8 +29,7 @@ services:
       - node-var:/var
       - node-opt:/opt
       - node-etc:/etc
-      - type: tmpfs
-        target: /run
+      - node-run:/run
       - type: tmpfs
         target: /tmp
     working_dir: /usernetes
@@ -45,6 +46,29 @@ services:
       "nerdctl/bypass4netns": "${BYPASS4NETNS:-false}"
       "nerdctl/bypass4netns-ignore-bind": "true"
       "nerdctl/bypass4netns-ignore-subnets": "${BYPASS4NETNS_IGNORE_SUBNETS:-}"
+
+  dranet:
+    image: usernetes_dra
+    imagePullPolicy: Always
+    container_name: dranet-driver
+    privileged: true
+    restart: always
+    # DraNet needs to see the host network to manage its devices
+    network_mode: "host"
+    volumes:
+      - /boot:/boot:ro
+      - /lib/modules:/lib/modules:ro
+      - node-var:/var
+      - node-run:/run:ro
+      - node-etc:/etc
+    extra_hosts:
+      # We need to be able to see the api server
+      - "${NODE_NAME}:${HOST_IP}"
+    command:
+      - --kubeconfig=/etc/kubernetes/admin.conf
+      - --hostname-override=${NODE_NAME}
+      - --filter=true 
+
 networks:
   default_network:
     ipam:
@@ -53,6 +77,7 @@ networks:
         # The node IP here is not accessible from other nodes.
         - subnet: ${NODE_SUBNET}
 volumes:
+  node-run: {}
   node-var: {}
   node-opt: {}
   node-etc: {}
