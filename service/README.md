@@ -13,7 +13,18 @@ Request a flux alloc for the control plane and a worker, for however many minute
 flux alloc --bg -N2 -q pbatch -t 8h
 ```
 
+You can use the WIP testing script to bring up control plane and worker nodes:
+
+```bash
+bash start-usernetes.sh
+```
+
+The script will shell you into the control plane node after starting.
+
+
 ### Control Plane
+
+If you can't start services via ssh:
 
 ```bash
 # For the control plane - start
@@ -25,9 +36,30 @@ systemctl --user status usernetes-control-plane
 # check log in /usr/workspace/usernetes/control-plane.log
 ```
 
-Importantly, in the above you need a podman-compose that has the line to add a label for `PODMAN_SYSTEMD_UNIT` commented out. If when you are in the usernetes kubelet container (`make shell`) or a container and `ulimit -l` is not unlimited, Infiniband is unlikely to work.
+If you can:
+
+```bash
+ssh corona190 systemctl --user start usernetes-control-plane
+ssh corona190 systemctl --user status usernetes-control-plane
+```
+
+When /tmp/$USER/usernetes/source-env.sh exists, you can start the worker node
+
+```
+ssh corona190 ls corona190 ls /tmp/sochat1/usernetes
+```
+You can also look at the log file. Look for this line at the very end:
+
+```
+cat /usr/workspace/usernetes/control-plane.log
+2025-07-13 22:29:29 - INFO - 🚀 Service will now idle indefinitely. Process ID: 819551
+```
+
+Then you can start the worker(s). And importantly, in the above you need a podman-compose that has the line to add a label for `PODMAN_SYSTEMD_UNIT` commented out. If when you are in the usernetes kubelet container (`make shell`) or a container and `ulimit -l` is not unlimited, Infiniband is unlikely to work.
 
 ### Worker
+
+Without services enabled via ssh:
 
 ```bash
 ssh corona190
@@ -35,6 +67,13 @@ rm -rf /usr/workspace/usernetes/worker.log
 systemctl --user start usernetes-worker
 systemctl --user status usernetes-worker
 # check log in /usr/workspace/usernetes/worker.log
+```
+
+Or with:
+
+```bash
+ssh corona192 systemctl --user start usernetes-worker
+ssh corona192 systemctl --user status usernetes-worker
 ```
 
 Back on the control plane (if everything looks good) we can go to the copied control plane directory, source a file to get kubectl and the correct paths, and see our cluster.
