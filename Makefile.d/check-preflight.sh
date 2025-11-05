@@ -16,7 +16,9 @@ script_dir="$(dirname "$0")"
 detect_engine="${script_dir}"/detect-container-engine.sh
 : "${CONTAINER_ENGINE:=$("${detect_engine}" CONTAINER_ENGINE)}"
 : "${CONTAINER_ENGINE_TYPE:=$("${detect_engine}" CONTAINER_ENGINE_TYPE)}"
-: "${QUICK:=0}"
+
+# Set to 1 since we will do calico by default
+: "${QUICK:=1}"
 : "${BUSYBOX_IMAGE:=docker.io/library/busybox:latest}"
 
 if [ -z "${CONTAINER_ENGINE}" ] || [ -z "${CONTAINER_ENGINE_TYPE}" ]; then
