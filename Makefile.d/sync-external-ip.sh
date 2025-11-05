@@ -16,4 +16,6 @@ for node in $(kubectl get nodes -o name); do
 	if echo "${taints}" | grep -q node.cloudprovider.kubernetes.io/uninitialized; then
 		kubectl taint nodes "${node}" node.cloudprovider.kubernetes.io/uninitialized-
 	fi
+        nodename=$(cut -d / -f 2 <<< $node)
+        calicoctl --allow-version-mismatch patch node ${nodename} --patch='{"spec": {"bgp":{"ipv4Address": "'"$host_ip"'"}}}'
 done
