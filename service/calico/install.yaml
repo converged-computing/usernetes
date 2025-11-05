@@ -1,0 +1,96 @@
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  # Configures Calico networking.
+  calicoNetwork:
+    # Note: The ipPools section cannot be modified post-install.
+    ipPools:
+    - blockSize: 26
+      cidr: 10.244.0.0/16
+      # https://docs.tigera.io/calico/latest/network-policy/non-privileged
+      encapslation: VXLANCrossSubnet
+      # encapsulation: VXLAN
+      natOutgoing: Enabled
+      nodeSelector: all()
+  kubeletVolumePluginPath: "/var/lib/kubelet"
+  nonPrivileged: Enabled
+---
+apiVersion: operator.tigera.io/v1
+kind: APIServer
+metadata:
+  name: default
+spec: {}
+---
+apiVersion: crd.projectcalico.org/v1
+kind: FelixConfiguration
+metadata:
+  name: default
+spec:
+  # Change from standard Calico (4789) to Flannel default (8472)
+  ipv6Support: false
+  vxlanPort: 8472
+  vxlanVNI: 4096
+  vxlanMTU: 1450
+  # I don't think we need this one
+  # vxlanEnabled: 
+  bpfEnforceRPF: "Loose" # or Strict
+# This first one might not be necessary
+# kubectl set env deployment/calico-kube-controllers -n calico-system KUBERNETES_SERVICE_HOST=$(kubectl get endpoints kubernetes -n default -o jsonpath='{.subsets[0].addresses[0].ip}') KUBERNETES_SERVICE_PORT=6443
+# kubectl patch daemonset calico-node -n calico-system --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "FELIX_IGNORELOOSERPF", "value": "true"}}]'
+---
+# TODO this needs to automatically be the node external ip.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-services-endpoint
+  namespace: tigera-operator
+data:
+  # hostname -i
+  KUBERNETES_SERVICE_HOST: "192.168.128.190"
+  KUBERNETES_SERVICE_PORT: "6443"
+  FELIX_IGNORELOOSERPF: "true"
+#  CALICO_NETWORKING_BACKEND: "vxlan"
+  
+# We MUST do this to ignore the ipv6 stuff
+# kubectl -n calico-system annotate daemonset calico-node unsupported.operator.tigera.io/ignore="true"
+# Not sure if this one is needed to - try without it.
+# kubectl patch daemonset calico-node -n calico-system --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "FELIX_IPV6SUPPORT", "value": "false"}}]'
+
+# kubectl patch daemonset calico-node -n calico-system --type='json' -p='[{"op": "patch", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "CALICO_NETWORKING_BACKEND", "value": "vxlan"}}]'
+
+
+kubectl -n calico-system patch daemonset calico-node --type='strategic' -p '
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "calico-node",
+            "env": [
+              {
+                "name": "CALICO_NETWORKING_BACKEND",
+                "value": "vxlan"
+              },
+              {
+                "name": "FELIX_IPV6SUPPORT",
+                "value": "false"
+              },
+              {
+                "name": "FELIX_IGNORELOOSERPF",
+                "value": "true"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}'
+
+# kubectl -n calico-apiserver delete pod -l k8s-app=calico-apiserver
+# kubectl -n calico-system delete pod calico-kube-controllers-c59c9c89b-fffdp 
+# kubectl -n calico-system delete pod -l k8s-app=calico-node
+

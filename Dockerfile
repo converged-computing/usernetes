@@ -34,7 +34,23 @@ RUN arch="$(uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64/)" && \
 RUN apt-get update && apt-get install -y --no-install-recommends \
   gettext-base \
   moreutils \
-  socat
+  socat ipset wget
 ADD Dockerfile.d/etc_udev_rules.d_90-flannel.rules /etc/udev/rules.d/90-flannel.rules
+ADD Dockerfile.d/etc_udev_rules.d_95-calico.rules /etc/udev/rules.d/95-calico.rules
 ADD Dockerfile.d/u7s-entrypoint.sh /
+# Calico
+ENV FELIX_IGNORELOOSERPF=true
+RUN wget https://github.com/projectcalico/calico/releases/download/v3.30.5/calicoctl-linux-amd64 -O /tmp/calicoctl && \
+    chmod +x /tmp/calicoctl && mv /tmp/calicoctl /usr/local/bin
+
+# - Add calicoctl command for IPs in sync-external-ip
+# - nodename=$(cut -d / -f 2 <<< $node)
+# - calicoctl --allow-version-mismatch patch node ${nodename} --patch='{"spec":
+# {"bgp":{"ipv4Address": "'"$host_ip"'"}}}'
+# - https://docs.tigera.io/calico/latest/networking/ipam/ip-autodetection#manually-
+# configure-ip-address-and-subnet-for-a-node
+# - Docker-compose.yaml
+# - Add port entry for 4789 (VXLAN port used by calico)
+# - Dockerfile.d/etc_udev_rules.d_90-flannel.rules
+# - Replace flannel.1 by vxlan.calico
 ENTRYPOINT ["/u7s-entrypoint.sh", "/usr/local/bin/entrypoint", "/sbin/init"]

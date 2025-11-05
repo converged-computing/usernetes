@@ -153,6 +153,15 @@ kubeadm-join:
 kubeadm-reset:
 	$(NODE_SHELL) kubeadm reset --force
 
+.PHONY: install-calico
+install-calico:
+	# Requires server side due to larger manifests
+	$(NODE_SHELL) kubectl apply  --server-side -f /usernetes/service/calico/calico-vxlan.yaml
+	$(NODE_SHELL) /usernetes/Makefile.d/install-calico.sh
+	# applies ethtool -K vxlan.calico tx-checksum-ip-generic off
+	# check with: bridge fdb show dev vxlan.calico should have node address NOT 10.x address
+	$(NODE_SHELL) kubectl apply  --server-side -f /usernetes/service/calico/calico-ethtool.yaml
+
 .PHONY: install-flannel
 install-flannel:
 	# Kubernetes 1.30.x removed the check for br_netfilter from kubeadm.
