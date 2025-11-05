@@ -16,9 +16,8 @@ flux alloc --bg -N2 -q pbatch -t 8h
 ### Control Plane
 
 ```bash
+ssh corona189
 # For the control plane - start
-ssh <allocated node>
-# remove any old log
 rm -rf /usr/workspace/usernetes/control-plane.log 
 systemctl --user start usernetes-control-plane
 systemctl --user status usernetes-control-plane
@@ -109,6 +108,21 @@ export UCX_TLS=rc,sm,self
 export OMPI_MCA_pml=ucx
 export OMPI_MCA_osc=ucx
 flux run -N2 -n96 lmp -v x 8 -v y 8 -v z 8 -in in.reaxc.hns -nocite
+```
+
+### GPUs
+
+You can install the [ROCm/k8s-device-plugin](https://github.com/ROCm/k8s-device-plugin) to expose GPU devices to your pods.
+
+```bash
+# Install the driver plugin
+kubectl create -f https://raw.githubusercontent.com/ROCm/k8s-device-plugin/master/k8s-ds-amdgpu-dp.yaml
+
+# Create a test workflow that uses GPU (takes a bit to pull)
+https://raw.githubusercontent.com/ROCm/k8s-device-plugin/763445e18f3838fa72b22e31a04ec25987334bff/example/pod/pytorch-non-privileged.yaml
+
+# Get logs (it takes a while to pull...)
+kubectl logs alexnet-tf-gpu-pod alexnet-tf-gpu-container
 ```
 
 Our final experiments will be done separately, and these notes likely cleaned up.
