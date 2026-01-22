@@ -20,6 +20,8 @@ services:
       - ${PORT_KUBELET}:${PORT_KUBELET}
       # flannel (default: 8472)
       - ${PORT_FLANNEL}:${PORT_FLANNEL}/udp
+      # Calico (default 5473, setup uses same as flannel)
+      - ${PORT_CALICO}:${PORT_CALICO}
     volumes:
       - .:/usernetes:ro
       - /boot:/boot:ro

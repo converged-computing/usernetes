@@ -6,6 +6,7 @@ export PORT_ETCD ?= 2379
 export PORT_KUBELET ?= 10250
 export PORT_FLANNEL ?= 8472
 export PORT_KUBE_APISERVER ?= 6443
+export PORT_CALICO ?= 5473
 
 # HOSTNAME is the name of the physical host
 export HOSTNAME ?= $(shell hostname)
@@ -35,6 +36,7 @@ NODE_SHELL := $(COMPOSE) exec \
 	-e NODE_IP=$(NODE_IP) \
 	-e PORT_KUBE_APISERVER=$(PORT_KUBE_APISERVER) \
 	-e PORT_FLANNEL=$(PORT_FLANNEL) \
+	-e PORT_CALICO=$(PORT_CALICO) \
 	-e PORT_KUBELET=$(PORT_KUBELET) \
 	-e PORT_ETCD=$(PORT_ETCD) \
 	$(NODE_SERVICE_NAME)
@@ -152,3 +154,17 @@ kubeadm-reset:
 .PHONY: install-flannel
 install-flannel:
 	$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh
+
+.PHONY: install-calico
+install-calico:
+	# Requires server side due to larger manifests
+	$(NODE_SHELL) kubectl apply  --server-side -f /usernetes/service/calico/calico-vxlan.yaml
+	# IP sets to autodetect, needs to be removed because will reset our change
+	$(NODE_SHELL) kubectl set env daemonset/calico-node IP- -n kube-system
+	echo "Recreating Calico pods..."
+	sleep 15
+	# Calico daemonset changes and node-level address changes
+	$(NODE_SHELL) /usernetes/Makefile.d/install-calico.sh
+	# applies ethtool -K vxlan.calico tx-checksum-ip-generic off
+	# check with: bridge fdb show dev vxlan.calico should have node address NOT 10.x address
+	$(NODE_SHELL) kubectl apply  --server-side -f /usernetes/Makefile.d/calico-ethtool.yaml

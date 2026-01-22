@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: calico-checksum-fix
+  namespace: kube-system
+  labels:
+    k8s-app: calico-checksum-fix
+spec:
+  selector:
+    matchLabels:
+      name: calico-checksum-fix
+  template:
+    metadata:
+      labels:
+        name: calico-checksum-fix
+    spec:
+      hostNetwork: true
+      hostPID: true
+      securityContext:
+        runAsUser: 0
+      initContainers:
+      - name: fix-checksum
+        image: ghcr.io/converged-computing/usernetes:alpine
+        # image: alpine:latest
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            # nsenter -t 1 enters the init process's namespace (of the host)
+            # check if the interface exists before running ethtool
+            if [ -d /sys/class/net/vxlan.calico ]; then
+              echo "Applying ethtool fix to vxlan.calico..."
+              nsenter -t 1 -n -u -i -m -- ethtool -K vxlan.calico tx-checksum-ip-generic off
+            else
+              echo "vxlan.calico interface not found, skipping."
+            fi
+            iptables -I INPUT -p udp --dport 8472 -j ACCEPT
+            sysctl -w net.ipv4.conf.all.rp_filter=1
+            sysctl -w net.ipv4.conf.default.rp_filter=1
+            sysctl -w net.ipv4.conf.eth0.rp_filter=1
+            sysctl -w net.ipv4.conf.vxlan/calico.rp_filter=1
+        securityContext:
+          privileged: true
+      containers:
+      - name: pause
+        # image: registry.k8s.io/pause:3.9
+        image: ghcr.io/converged-computing/usernetes:pause
+      terminationGracePeriodSeconds: 0

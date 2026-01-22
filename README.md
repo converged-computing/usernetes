@@ -19,6 +19,7 @@ but Usernetes (Gen 2) supports creating a cluster with multiple hosts.
 - CRI: containerd
 - OCI: runc
 - CNI: Flannel
+- CNI: Calico
 
 ## Requirements
 
@@ -72,7 +73,7 @@ EOF
 sudo systemctl restart systemd-modules-load.service
 ```
 
-- sysctl:
+- sysctl: (may not be required for Calico, needs testing)
 ```
 sudo tee /etc/sysctl.d/99-usernetes.conf <<EOF >/dev/null
 net.ipv4.conf.default.rp_filter = 2
@@ -110,6 +111,8 @@ See `make help`.
 make up
 make kubeadm-init
 make install-flannel
+# or
+make install-calico
 
 # Enable kubectl
 make kubeconfig
