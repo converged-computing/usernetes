@@ -19,8 +19,8 @@ flux alloc --bg -N2 -q pbatch -t 8h
 ssh corona189
 # For the control plane - start
 rm -rf /usr/workspace/usernetes/control-plane.log 
-systemctl --user start usernetes-control-plane
-systemctl --user status usernetes-control-plane
+systemctl --user start usernetes-control-plane-calico
+systemctl --user status usernetes-control-plane-calico
 # check log in /usr/workspace/usernetes/control-plane.log
 ```
 
@@ -31,8 +31,8 @@ Importantly, in the above you need a podman-compose that has the line to add a l
 ```bash
 ssh corona190
 rm -rf /usr/workspace/usernetes/worker.log 
-systemctl --user start usernetes-worker
-systemctl --user status usernetes-worker
+systemctl --user start usernetes-worker-calico
+systemctl --user status usernetes-worker-calico
 # check log in /usr/workspace/usernetes/worker.log
 ```
 
@@ -40,6 +40,11 @@ Back on the control plane (if everything looks good) we can go to the copied con
 
 ```bash
 . source_env.sh
+make sync-external-ip
+make install-calico
+# Unset daemonset variable for automatic ip
+kubectl set env daemonset/calico-node IP- -n kube-system
+# Do we need to then set the
 ```
 ```console
 [sochat1@corona190:service]$ kubectl get nodes
@@ -48,11 +53,24 @@ u7s-corona190   NotReady  control-plane   3m20s v1.30.0
 u7s-corona196   NotReady  <none>          1m3s  v1.30.0
 ```
 
+In u7s this should be same as host:
+
+```
+bridge fdb show dev vxlan.calico
+```
+```console
+# "that address"
+66:63:44:f3:b6:76 dst 192.168.128.222 self permanent
+```
+
+The problem is that address needs to be the host ip, NOT the container interface (10.100). The environment variable in the calico node for "IP" being set to "autodetect" needs to be removed via the daemonset. So next time, automate that and remove it, and then test the setup with DNS names, and then test the setup with Flux Operator.
+
 Importantly, the ips need to be sync'd (and an annotation added for flannel) after nodes are up. They will all be `NotReady`.
 
 ```bash
 make sync-external-ip
-make install-flannel
+# or (needs testing on >1 node)
+kubectl  apply -f service/calico/calico-vxlan.yaml 
 ```
 ```console
 [sochat1@corona190:service]$ kubectl get nodes

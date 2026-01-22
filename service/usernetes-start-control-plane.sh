@@ -5,13 +5,23 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-06-26-2025
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-calico
 
 # We will copy join command here
 shared_join_command_dir="/usr/workspace/usernetes"
 
 # The user needs to run the setup script
 USERNAME=$(whoami)
+
+# Logging functions for consistency (like Akihiro!)
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
+}
+
+error_exit() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
+    exit 1
+}
 
 # This is way a lot for just deriving home, but I'm not convinced it will always
 # be defined in the environment
@@ -37,16 +47,6 @@ which podman-compose
 # We don't want to use /var because that is a memory based fs
 export TMPDIR="/tmp/${USERNAME}"
 
-# Logging functions for consistency (like Akihiro!)
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
-}
-
-error_exit() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
-    exit 1
-}
-
 install_kubectl() {
     if ! command -v kubectl > /dev/null; then
         log "Installing kubectl..."
@@ -59,8 +59,6 @@ install_kubectl() {
     fi
     command -v kubectl > /dev/null || error_exit "kubectl not found after installation attempt."
 }
-
-
 
 # Pre-flight Checks & Setup
 log "🎬 Starting Usernetes Control Plane Setup"
@@ -214,6 +212,12 @@ export KUBECONFIG=$TMPDIR/usernetes/kubeconfig
 export XDG_RUNTIME_DIR=$TMPDIR/.usernetes/runtime
 source <(kubectl completion bash)
 EOF
+
+iptables -I INPUT -p udp --dport 8472 -j ACCEPT
+sysctl -w net.ipv4.conf.all.rp_filter=2
+sysctl -w net.ipv4.conf.default.rp_filter=2
+sysctl -w net.ipv4.conf.eth0.rp_filter=2
+sysctl -w net.ipv4.conf.vxlan/calico.rp_filter=2 
 
 # Keep the script running so systemd considers the service active.
 # The actual k8s processes are managed by containerd/kubelet inside the usernetes_node container.
