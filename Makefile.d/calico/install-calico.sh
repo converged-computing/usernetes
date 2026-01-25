@@ -13,13 +13,6 @@ kubectl delete deployments.apps -n kube-system calico-kube-controllers
 kubectl delete cm -n kube-system calico-config
 kubectl delete daemonsets.apps -n kube-system calico-node
 
-# These are for our corona images
-yq eval -i '(.spec.template.spec.initContainers[] | select(.name == "upgrade-ipam") | .image) = "ghcr.io/converged-computing/usernetes:calico-cni"' ./Makefile.d/calico/deploy/daemonset.yaml
-yq eval -i '(.spec.template.spec.initContainers[] | select(.name == "install-cni") | .image) = "ghcr.io/converged-computing/usernetes:calico-cni"' ./Makefile.d/calico/deploy/daemonset.yaml
-yq eval -i '(.spec.template.spec.initContainers[] | select(.name == "ebpf-bootstrap") | .image) = "ghcr.io/converged-computing/usernetes:calico-node"' ./Makefile.d/calico/deploy/daemonset.yaml
-yq eval -i '(.spec.template.spec.containers[] | select(.name == "calico-node") | .image) = "ghcr.io/converged-computing/usernetes:calico-node"' ./Makefile.d/calico/deploy/daemonset.yaml
-yq eval -i '(.spec.template.spec.containers[] | select(.name == "calico-kube-controllers") | .image) = "ghcr.io/converged-computing/usernetes:calico-kube-controllers"' ./Makefile.d/calico/deploy/deployment.yaml
-
 # Update components with our version
 # Note that IP autodetect has to initially be there so the vxlan.calico shows up
 kubectl apply -f ./Makefile.d/calico/deploy
