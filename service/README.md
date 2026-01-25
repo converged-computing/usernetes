@@ -20,9 +20,9 @@ TODO: `export QUICK=1`
 ```bash
 ssh corona189
 # For the control plane - start
-rm -rf /usr/workspace/usernetes/control-plane.log
-systemctl --user start usernetes-control-plane-calico
-systemctl --user status usernetes-control-plane-calico
+rm -rf /usr/workspace/usernetes/control-plane.log 
+systemctl --user start usernetes-control-plane
+systemctl --user status usernetes-control-plane
 # check log in /usr/workspace/usernetes/control-plane.log
 ```
 
@@ -110,6 +110,7 @@ https://raw.githubusercontent.com/ROCm/k8s-device-plugin/763445e18f3838fa72b22e3
 kubectl logs alexnet-tf-gpu-pod alexnet-tf-gpu-container
 ```
 
+
 ### Debugging
 
 Calico: In u7s this address should be same as host:
@@ -123,4 +124,3 @@ bridge fdb show dev vxlan.calico
 ```
 
 If you see the container interface (10.0.x) this is a bug. It could be that the calico-node daemonset still has the `IP` environment variable set to autodetect (which will clobber any changes you make) or you did not issue all the commands in the sync external ip script, or the daemonset to run ethtool.
-
