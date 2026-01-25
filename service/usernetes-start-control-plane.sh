@@ -60,6 +60,21 @@ install_kubectl() {
     command -v kubectl > /dev/null || error_exit "kubectl not found after installation attempt."
 }
 
+install_yq() {
+    if ! command -v yq > /dev/null; then
+        log "Installing yq..."
+        YQ_VERSION=v4.2.0
+        YQ_PLATFORM=linux_amd64
+        wget https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_${YQ_PLATFORM}.tar.gz -O - | tar xz 
+        chmod +x ./yq_${YQ_PLATFORM} 
+        mv ./yq_${YQ_PLATFORM} "${LOCAL_BIN_DIR}/yq"
+        log "      yq installed to ${LOCAL_BIN_DIR}/yq"
+    else
+        log "      yq found at $(command -v yq)"
+    fi
+    command -v yq > /dev/null || error_exit "yq not found after installation attempt."
+}
+
 # Pre-flight Checks & Setup
 log "🎬 Starting Usernetes Control Plane Setup"
 log "    Temporary directory: ${TMPDIR}"

@@ -33,8 +33,8 @@ Importantly, in the above you need a podman-compose that has the line to add a l
 ```bash
 ssh corona190
 rm -rf /usr/workspace/usernetes/worker.log 
-systemctl --user start usernetes-worker-calico
-systemctl --user status usernetes-worker-calico
+systemctl --user start usernetes-worker
+systemctl --user status usernetes-worker
 # check log in /usr/workspace/usernetes/worker.log
 ```
 

@@ -165,15 +165,5 @@ install-flannel:
 
 .PHONY: install-calico
 install-calico:
-	# Requires server side due to larger manifests
-	$(NODE_SHELL) kubectl apply  --server-side -f /usernetes/Makefile.d/calico/calico-vxlan.yaml
-	# IP sets to autodetect, needs to be removed because will reset our change
-	$(NODE_SHELL) kubectl set env daemonset/calico-node IP- -n kube-system
-	# Allow pods to recreate
-	echo "Recreating calico pods..."
-	sleep 10
 	# Calico daemonset changes and node-level address changes
-	$(NODE_SHELL) /usernetes/Makefile.d/install-calico.sh
-	# applies ethtool -K vxlan.calico tx-checksum-ip-generic off
-	# check with: bridge fdb show dev vxlan.calico should have node address NOT 10.x address
-	$(NODE_SHELL) kubectl apply  --server-side -f /usernetes/Makefile.d/calico/calico-ethtool.yaml
+	$(NODE_SHELL) /usernetes/Makefile.d/calico/install-calico.sh
