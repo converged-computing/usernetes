@@ -2,27 +2,38 @@
 
 # Install standard Calico
 CALICO_VERSION="v3.31"
-kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-${CALICO_VERSION}/manifests/calico.yaml
+CALICO_FILE="calico.yaml"
 
-# Allow initial creation, then cleanup
-# This seems necessary because without, ip addr will not show complete setup
-sleep 10
+# 1. Download official manifest
+wget https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-v3.31/manifests/calico.yaml -O $CALICO_FILE
 
-# Delete objects we will customize and re-create
-kubectl delete deployments.apps -n kube-system calico-kube-controllers
-kubectl delete cm -n kube-system calico-config
-kubectl delete daemonsets.apps -n kube-system calico-node
+# backend to vxlan
+yq eval-all -i '(select(.kind == "ConfigMap" and .metadata.name == "calico-config").data.calico_backend) = "vxlan"' $CALICO_FILE
 
-# These are for our corona images
-yq eval -i '(.spec.template.spec.initContainers[] | select(.name == "upgrade-ipam") | .image) = "ghcr.io/converged-computing/usernetes:calico-cni"' ./Makefile.d/calico/deploy/daemonset.yaml
-yq eval -i '(.spec.template.spec.initContainers[] | select(.name == "install-cni") | .image) = "ghcr.io/converged-computing/usernetes:calico-cni"' ./Makefile.d/calico/deploy/daemonset.yaml
-yq eval -i '(.spec.template.spec.initContainers[] | select(.name == "ebpf-bootstrap") | .image) = "ghcr.io/converged-computing/usernetes:calico-node"' ./Makefile.d/calico/deploy/daemonset.yaml
-yq eval -i '(.spec.template.spec.containers[] | select(.name == "calico-node") | .image) = "ghcr.io/converged-computing/usernetes:calico-node"' ./Makefile.d/calico/deploy/daemonset.yaml
-yq eval -i '(.spec.template.spec.containers[] | select(.name == "calico-kube-controllers") | .image) = "ghcr.io/converged-computing/usernetes:calico-kube-controllers"' ./Makefile.d/calico/deploy/deployment.yaml
+# Images for corona
+yq eval-all -i '(select(.kind == "Deployment" and .metadata.name == "calico-kube-controllers").spec.template.spec.containers[0].image) = "ghcr.io/converged-computing/usernetes:calico-kube-controllers"' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.initContainers[] | select(.name == "upgrade-ipam").image) = "ghcr.io/converged-computing/usernetes:calico-cni"' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.initContainers[] | select(.name == "install-cni").image) = "ghcr.io/converged-computing/usernetes:calico-cni"' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.initContainers[] | select(.name == "ebpf-bootstrap").image) = "ghcr.io/converged-computing/usernetes:calico-node"' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].image) = "ghcr.io/converged-computing/usernetes:calico-node"' $CALICO_FILE
 
-# Update components with our version
-# Note that IP autodetect has to initially be there so the vxlan.calico shows up
-kubectl apply -f ./Makefile.d/calico/deploy
+# IPIP and VXLAN
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV4POOL_IPIP").value) = "Never"' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV4POOL_VXLAN").value) = "CrossSubnet"' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV6POOL_VXLAN").value) = "CrossSubnet"' $CALICO_FILE
+
+# FELIX for rootless
+yq eval-all -i 'select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env += {"name": "FELIX_IGNORELOOSERPF", "value": "true"}' $CALICO_FILE
+yq eval-all -i 'select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env += {"name": "FELIX_VXLANPORT", "value": "8472"}' $CALICO_FILE
+yq eval-all -i 'select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env += {"name": "FELIX_EXTERNALNODESCIDRLIST", "value": "10.100.0.0/16"}' $CALICO_FILE
+
+# health probes (Remove bird-ready and bird-live)
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].livenessProbe.exec.command) = ["/bin/calico-node", "-felix-live"]' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].readinessProbe.exec.command) = ["/bin/calico-node", "-felix-ready"]' $CALICO_FILE
+
+# install components with our rootless version
+kubectl apply -f ${CALICO_FILE}
+echo "Done. Final file is $CALICO_FILE"
 
 # Give a small break to settle - we need calico.vxlan to be created
 sleep 10
