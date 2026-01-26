@@ -5,13 +5,23 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-06-26-2025
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-calico
 
 # We will copy join command here
 shared_join_command_dir="/usr/workspace/usernetes"
 
 # The user needs to run the setup script
 USERNAME=$(whoami)
+
+# Logging functions for consistency (like Akihiro!)
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
+}
+
+error_exit() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
+    exit 1
+}
 
 # This is way a lot for just deriving home, but I'm not convinced it will always
 # be defined in the environment
@@ -37,16 +47,6 @@ which podman-compose
 # We don't want to use /var because that is a memory based fs
 export TMPDIR="/tmp/${USERNAME}"
 
-# Logging functions for consistency (like Akihiro!)
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
-}
-
-error_exit() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
-    exit 1
-}
-
 install_kubectl() {
     if ! command -v kubectl > /dev/null; then
         log "Installing kubectl..."
@@ -60,7 +60,20 @@ install_kubectl() {
     command -v kubectl > /dev/null || error_exit "kubectl not found after installation attempt."
 }
 
-
+install_yq() {
+    if ! command -v yq > /dev/null; then
+        log "Installing yq..."
+        YQ_VERSION=v4.2.0
+        YQ_PLATFORM=linux_amd64
+        wget https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_${YQ_PLATFORM}.tar.gz -O - | tar xz 
+        chmod +x ./yq_${YQ_PLATFORM} 
+        mv ./yq_${YQ_PLATFORM} "${LOCAL_BIN_DIR}/yq"
+        log "      yq installed to ${LOCAL_BIN_DIR}/yq"
+    else
+        log "      yq found at $(command -v yq)"
+    fi
+    command -v yq > /dev/null || error_exit "yq not found after installation attempt."
+}
 
 # Pre-flight Checks & Setup
 log "🎬 Starting Usernetes Control Plane Setup"
