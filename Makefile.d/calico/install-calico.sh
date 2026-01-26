@@ -3,19 +3,10 @@
 # Install standard Calico
 CALICO_VERSION="v3.31"
 CALICO_FILE="calico.yaml"
-
-# 1. Download official manifest
 wget https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-v3.31/manifests/calico.yaml -O $CALICO_FILE
 
 # backend to vxlan
 yq eval-all -i '(select(.kind == "ConfigMap" and .metadata.name == "calico-config").data.calico_backend) = "vxlan"' $CALICO_FILE
-
-# Images for corona
-yq eval-all -i '(select(.kind == "Deployment" and .metadata.name == "calico-kube-controllers").spec.template.spec.containers[0].image) = "ghcr.io/converged-computing/usernetes:calico-kube-controllers"' $CALICO_FILE
-yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.initContainers[] | select(.name == "upgrade-ipam").image) = "ghcr.io/converged-computing/usernetes:calico-cni"' $CALICO_FILE
-yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.initContainers[] | select(.name == "install-cni").image) = "ghcr.io/converged-computing/usernetes:calico-cni"' $CALICO_FILE
-yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.initContainers[] | select(.name == "ebpf-bootstrap").image) = "ghcr.io/converged-computing/usernetes:calico-node"' $CALICO_FILE
-yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].image) = "ghcr.io/converged-computing/usernetes:calico-node"' $CALICO_FILE
 
 # IPIP and VXLAN
 yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV4POOL_IPIP").value) = "Never"' $CALICO_FILE
