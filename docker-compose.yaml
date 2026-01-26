@@ -3,7 +3,7 @@
 ---
 services:
   node:
-    image: usernetes_node
+    build: .
     hostname: ${NODE_NAME}
     privileged: true
     restart: always

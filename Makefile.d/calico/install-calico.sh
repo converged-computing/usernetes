@@ -1,21 +1,28 @@
 #!/bin/bash
 
-# Install standard Calico
-CALICO_VERSION="v3.31"
-kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-${CALICO_VERSION}/manifests/calico.yaml
+# Install standard Calico (downloaded in Dockerfile on build)
+CALICO_FILE="/calico.yaml"
 
-# Allow initial creation, then cleanup
-# This seems necessary because without, ip addr will not show complete setup
-sleep 10
+# backend to vxlan
+yq eval-all -i '(select(.kind == "ConfigMap" and .metadata.name == "calico-config").data.calico_backend) = "vxlan"' $CALICO_FILE
 
-# Delete objects we will customize and re-create
-kubectl delete deployments.apps -n kube-system calico-kube-controllers
-kubectl delete cm -n kube-system calico-config
-kubectl delete daemonsets.apps -n kube-system calico-node
+# Disable IPIP and enable CrossSubnet VXLAN for IPv4/IPv6 in the Calico manifest
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV4POOL_IPIP").value) = "Never"' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV4POOL_VXLAN").value) = "CrossSubnet"' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV6POOL_VXLAN").value) = "CrossSubnet"' $CALICO_FILE
 
-# Update components with our version
-# Note that IP autodetect has to initially be there so the vxlan.calico shows up
-kubectl apply -f ./Makefile.d/calico/deploy
+# FELIX for rootless
+yq eval-all -i 'select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env += {"name": "FELIX_IGNORELOOSERPF", "value": "true"}' $CALICO_FILE
+yq eval-all -i 'select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env += {"name": "FELIX_VXLANPORT", "value": "8472"}' $CALICO_FILE
+yq eval-all -i 'select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env += {"name": "FELIX_EXTERNALNODESCIDRLIST", "value": "10.100.0.0/16"}' $CALICO_FILE
+
+# health probes (Remove bird-ready and bird-live)
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].livenessProbe.exec.command) = ["/bin/calico-node", "-felix-live"]' $CALICO_FILE
+yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].readinessProbe.exec.command) = ["/bin/calico-node", "-felix-ready"]' $CALICO_FILE
+
+# install components with our rootless version
+kubectl apply -f ${CALICO_FILE}
+echo "Done. Final file is $CALICO_FILE"
 
 # Give a small break to settle - we need calico.vxlan to be created
 sleep 10
@@ -51,3 +58,10 @@ kubectl apply --server-side -f /usernetes/Makefile.d/calico/calico-ethtool.yaml
 # 1. make sync-external-ip and make install-calico
 # the second has a daemonset to apply these commands
 # ethtool -K vxlan.calico tx-checksum-ip-generic off
+
+for node in $(kubectl get nodes -o name); do
+    # Extracts the node name and tell calico host for its BGP peering
+	# BGP mesh will not connect without this correct address
+    nodename=$(cut -d / -f 2 <<< $node)
+    calicoctl --allow-version-mismatch patch node ${nodename} --patch='{"spec": {"bgp":{"ipv4Address": "'"$host_ip"'"}}}'
+done

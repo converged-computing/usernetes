@@ -73,7 +73,7 @@ EOF
 sudo systemctl restart systemd-modules-load.service
 ```
 
-- sysctl (should not be required for calico, but needs testing)
+- sysctl:
 
 ```
 sudo tee /etc/sysctl.d/99-usernetes.conf <<EOF >/dev/null
@@ -190,6 +190,20 @@ make up
 ```
 
 ![docs/images/multi-tenancy.png](./docs/images/multi-tenancy.png)
+
+### Calico
+
+For debugging. In u7s this address should be same as host:
+
+```bash
+bridge fdb show dev vxlan.calico
+```
+```console
+# "this address"
+66:63:44:f3:b6:76 dst 192.168.128.222 self permanent
+```
+
+If you see the container interface (10.0.x) this is a bug. It could be that the calico-node daemonset still has the `IP` environment variable set to autodetect (which will clobber any changes you make) or you did not issue all the commands in the sync external ip script, or the daemonset to run ethtool.
 
 ### Rootful mode
 Although Usernetes (Gen2) is designed to be used with Rootless Docker, it should work with the regular "rootful" Docker too.
