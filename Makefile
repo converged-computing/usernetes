@@ -6,6 +6,7 @@ export PORT_ETCD ?= 2379
 export PORT_KUBELET ?= 10250
 export PORT_FLANNEL ?= 8472
 export PORT_KUBE_APISERVER ?= 6443
+export PORT_CALICO ?= 5473
 
 # HOSTNAME is the name of the physical host
 export HOSTNAME ?= $(shell hostname)
@@ -35,6 +36,7 @@ NODE_SHELL := $(COMPOSE) exec \
 	-e NODE_IP=$(NODE_IP) \
 	-e PORT_KUBE_APISERVER=$(PORT_KUBE_APISERVER) \
 	-e PORT_FLANNEL=$(PORT_FLANNEL) \
+	-e PORT_CALICO=$(PORT_CALICO) \
 	-e PORT_KUBELET=$(PORT_KUBELET) \
 	-e PORT_ETCD=$(PORT_ETCD) \
 	$(NODE_SERVICE_NAME)
@@ -83,7 +85,7 @@ render: check-preflight
 up: check-preflight
 	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
 	sed -i "s/default_network/$(HOSTNAME)/g" docker-compose.yaml
-	$(COMPOSE) up --build -d
+	$(COMPOSE) up -d
 
 .PHONY: down
 down:
@@ -158,5 +160,10 @@ install-flannel:
 	# Kubernetes 1.30.x removed the check for br_netfilter from kubeadm.
 	# Flannel over version 0.25 checks for br_netfilter, which won't be in the podman node.
 	# We don't actually need it there, just on the physical node, so we use newer K8s and older flannel
-	$(NODE_SHELL) kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.1/kube-flannel.yml
-	#$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh
+	# $(NODE_SHELL) kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.1/kube-flannel.yml
+	$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh
+
+.PHONY: install-calico
+install-calico:
+	# Calico daemonset changes and node-level address changes
+	$(NODE_SHELL) /usernetes/Makefile.d/calico/install-calico.sh yes

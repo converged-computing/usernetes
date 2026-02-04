@@ -37,6 +37,9 @@ done
 
 SERVICE_PORTS="PORT_KUBE_APISERVER=${PORT_KUBE_APISERVER} PORT_ETCD=${PORT_ETCD} PORT_FLANNEL=${PORT_FLANNEL} PORT_KUBELET=${PORT_KUBELET}"
 
+# Emulate build on hpc system
+# ${CONTAINER_ENGINE} build -f Dockerfile.d/Dockerfile.base -t ghcr.io/converged-computing/usernetes:node . 
+
 # Launch a Kubernetes node inside a Rootless Docker host
 for host in host0 host1; do
 	${LIMACTL} shell "${host}" ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" up
@@ -46,7 +49,9 @@ done
 ${LIMACTL} shell host0 ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" kubeadm-init install-flannel kubeconfig join-command
 
 # Let host1 join the cluster
-${LIMACTL} copy host0:~/usernetes/join-command host1:~/usernetes/join-command
+${LIMACTL} copy host0:~/usernetes/join-command ./join-command
+${LIMACTL} copy ./join-command host1:~/usernetes/join-command
+# ${LIMACTL} copy host0:~/usernetes/join-command host1:~/usernetes/join-command
 ${LIMACTL} shell host1 ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" kubeadm-join
 ${LIMACTL} shell host0 ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" sync-external-ip
 

@@ -1,0 +1,1 @@
+SUBSYSTEM=="net", ACTION=="add|change|move", ENV{INTERFACE}=="vxlan.calico", RUN+="/usr/sbin/ethtool -K vxlan.calico tx-checksum-ip-generic off"

@@ -7,7 +7,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        container_engine: [docker, nerdctl, podman]
+        container_engine: [docker, podman]
     uses: ./.github/workflows/reusable-single-node.yaml
     with:
       container_engine: ${{ matrix.container_engine }}
@@ -20,8 +20,6 @@ jobs:
         include:
           - lima_template: template://ubuntu-24.04
             container_engine: docker
-          - lima_template: template://ubuntu-24.04
-            container_engine: nerdctl
           - lima_template: template://centos-stream-9
             container_engine: podman
           - lima_template: template://fedora
