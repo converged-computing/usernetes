@@ -3,7 +3,9 @@
 ---
 services:
   node:
-    image: usernetes_node
+    build:
+      context: .
+      dockerfile: Dockerfile.d/Dockerfile.base
     hostname: ${NODE_NAME}
     privileged: true
     restart: always
@@ -42,11 +44,6 @@ services:
       # In addition, `net.ipv4.conf.default.rp_filter`
       # has to be set to 0 (disabled) or 2 (loose)
       # in the daemon's network namespace.
-    annotations:
-      # Accelerate network for nerdctl >= 2.0.0-beta.4 with bypass4netns >= 0.4.1
-      "nerdctl/bypass4netns": "${BYPASS4NETNS:-false}"
-      "nerdctl/bypass4netns-ignore-bind": "true"
-      "nerdctl/bypass4netns-ignore-subnets": "${BYPASS4NETNS_IGNORE_SUBNETS:-}"
 networks:
   default_network:
     ipam:

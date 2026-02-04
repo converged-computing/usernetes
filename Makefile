@@ -85,7 +85,7 @@ render: check-preflight
 up: check-preflight
 	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
 	sed -i "s/default_network/$(HOSTNAME)/g" docker-compose.yaml
-	$(COMPOSE) up --build -d
+	$(COMPOSE) up -d
 
 .PHONY: down
 down:
@@ -160,10 +160,10 @@ install-flannel:
 	# Kubernetes 1.30.x removed the check for br_netfilter from kubeadm.
 	# Flannel over version 0.25 checks for br_netfilter, which won't be in the podman node.
 	# We don't actually need it there, just on the physical node, so we use newer K8s and older flannel
-	$(NODE_SHELL) kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.1/kube-flannel.yml
-	#$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh
+	# $(NODE_SHELL) kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.1/kube-flannel.yml
+	$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh
 
 .PHONY: install-calico
 install-calico:
 	# Calico daemonset changes and node-level address changes
-	$(NODE_SHELL) /usernetes/Makefile.d/calico/install-calico.sh
+	$(NODE_SHELL) /usernetes/Makefile.d/calico/install-calico.sh yes

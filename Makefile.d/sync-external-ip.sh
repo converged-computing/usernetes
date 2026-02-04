@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eu -o pipefail
 
+USE_CALICO="${1:-no}"
+
 for node in $(kubectl get nodes -o name); do
 	# Set ExternalIP
 	host_ip="$(kubectl get "${node}" -o jsonpath='{.metadata.labels.usernetes/host-ip}')"
@@ -16,6 +18,10 @@ for node in $(kubectl get nodes -o name); do
 	if echo "${taints}" | grep -q node.cloudprovider.kubernetes.io/uninitialized; then
 		kubectl taint nodes "${node}" node.cloudprovider.kubernetes.io/uninitialized-
 	fi
-        nodename=$(cut -d / -f 2 <<< $node)
-        calicoctl --allow-version-mismatch patch node ${nodename} --patch='{"spec": {"bgp":{"ipv4Address": "'"$host_ip"'"}}}'
+	if [[ "${USE_CALICO}" == "yes" ]];
+		then
+			echo "Changing node patch to use calico"
+	        	nodename=$(cut -d / -f 2 <<< $node)
+        		calicoctl --allow-version-mismatch patch node ${nodename} --patch='{"spec": {"bgp":{"ipv4Address": "'"$host_ip"'"}}}'
+        	fi
 done

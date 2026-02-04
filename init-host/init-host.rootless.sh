@@ -12,11 +12,6 @@ case "${CONTAINER_ENGINE}" in
 "docker")
 	dockerd-rootless-setuptool.sh install || (journalctl --user --since "10 min ago"; exit 1)
 	;;
-"nerdctl")
-	containerd-rootless-setuptool.sh install
-	containerd-rootless-setuptool.sh install-buildkit-containerd
-	containerd-rootless-setuptool.sh install-bypass4netnsd
-	;;
 "podman")
 	# pasta does not seem to work well
 	# > 2024-12-02T17:15:40.070018488Z stderr F E1202 17:15:40.068621       1 main.go:228] Failed to create SubnetManager:

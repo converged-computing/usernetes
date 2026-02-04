@@ -101,6 +101,7 @@ log "    Found ${USERNETES_CONTAINER_TECH} at ${container_runtime_path}"
 # Install kubectl if not present
 log "    👀 Looking for kubectl"
 install_kubectl
+install_yq
 
 # Cleanup any previous podman context, setup with vhs
 log "    📦 Configuring ${container_runtime_path}"

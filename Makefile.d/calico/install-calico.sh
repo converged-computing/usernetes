@@ -4,8 +4,32 @@
 CALICO_VERSION="v3.31"
 CALICO_FILE="calico.yaml"
 
+# Create local bin
+LOCAL_BIN_DIR=~/.local/bin
+mkdir -p $LOCAL_BIN_DIR
+export PATH=$LOCAL_BIN_DIR:$PATH
+
 # 1. Download official manifest
 wget https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-v3.31/manifests/calico.yaml -O $CALICO_FILE
+
+install_yq() {
+    if ! command -v yq > /dev/null; then
+        log "Installing yq..."
+        YQ_VERSION=v4.2.0
+        YQ_PLATFORM=linux_amd64
+        cd /tmp
+        wget https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_${YQ_PLATFORM}.tar.gz -O - | tar xz 
+        chmod +x ./yq_${YQ_PLATFORM} 
+        mv ./yq_${YQ_PLATFORM} "${LOCAL_BIN_DIR}/yq"
+        log "      yq installed to ${LOCAL_BIN_DIR}/yq"
+        cd -
+    else
+        log "      yq found at $(command -v yq)"
+    fi
+    command -v yq > /dev/null || error_exit "yq not found after installation attempt."
+}
+
+install_yq
 
 # backend to vxlan
 yq eval-all -i '(select(.kind == "ConfigMap" and .metadata.name == "calico-config").data.calico_backend) = "vxlan"' $CALICO_FILE

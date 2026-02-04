@@ -76,10 +76,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y podman-compose
           podman info
+      # Emulate build on hpc system
       - run: make up
       - run: sleep 5
       - run: make kubeadm-init
-      - run: make install-flannel
+      - run: make install-calico
       - run: make kubeconfig
       - run: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
       - run: ./hack/test-smoke.sh

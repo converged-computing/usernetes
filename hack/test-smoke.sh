@@ -52,9 +52,17 @@ spec:
         - containerPort: 80
 EOF
 	INFO "Waiting for 3 replicas to be ready"
-	kubectl rollout status --timeout=5m statefulset
+	kubectl rollout status --timeout=5m statefulset || true
 
 	INFO "Connecting to dnstest-{0,1,2}.dnstest.default.svc.cluster.local"
+	INFO "GET PODS"
+	kubectl get pods
+	INFO "DESCRIBE PODS"
+	kubectl describe pods
+	for name in $(kubectl get pods -o json | jq -r .items[].metadata.name)
+	  do
+	     kubectl logs $name
+	  done
 	kubectl run -i --rm --image=alpine --restart=Never dnstest-shell -- sh -exc 'for f in $(seq 0 2); do wget -O- http://dnstest-${f}.dnstest.default.svc.cluster.local; done'
 
 	INFO "Deleting Service \"dnstest\""
