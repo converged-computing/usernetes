@@ -3,7 +3,9 @@
 ---
 services:
   node:
-    image: usernetes_node
+    build:
+      context: .
+      dockerfile: Dockerfile.d/Dockerfile.base
     hostname: ${NODE_NAME}
     privileged: true
     restart: always
