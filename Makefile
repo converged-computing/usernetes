@@ -24,13 +24,11 @@ export NODE_SUBNET ?= $(shell $(CURDIR)/Makefile.d/node-subnet.sh)
 export NODE_IP := $(subst .0/24,.100,$(NODE_SUBNET))
 
 export CONTAINER_ENGINE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh CONTAINER_ENGINE)
-
 export CONTAINER_ENGINE_TYPE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh CONTAINER_ENGINE_TYPE)
-
-COMPOSE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh COMPOSE) -f $(HERE)/compose/docker-compose.yaml
+COMPOSE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh COMPOSE)
 
 NODE_SERVICE_NAME := node
-NODE_SHELL := $(COMPOSE) $(COMPOSE_FILE) exec \
+NODE_SHELL := $(COMPOSE) exec \
 	-e HOST_IP=$(HOST_IP) \
 	-e NODE_NAME=$(NODE_NAME) \
 	-e NODE_SUBNET=$(NODE_SUBNET) \
@@ -84,14 +82,14 @@ render: check-preflight
 .PHONY: up
 up: check-preflight
 	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
-	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/compose/docker-compose.yaml
+	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/docker-compose.yaml
 	$(COMPOSE) up -d
 
 .PHONY: up-built
 up-built: check-preflight
 	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
-	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/compose/docker-compose.yaml
-	$(COMPOSE) -f $(HERE)/compose/prebuilt-node.yaml up -d
+	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/docker-compose.yaml
+	$(COMPOSE) -f $(HERE)/docker-compose.yaml -f $(HERE)/compose/prebuilt-node.yaml up -d
 
 .PHONY: down
 down:
