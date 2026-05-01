@@ -5,7 +5,7 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-06-26-2025
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-develop
 
 # We will copy join command here
 shared_join_command_dir="/usr/workspace/usernetes"
@@ -126,8 +126,11 @@ unshare_cleanup
 # Usernetes Specific Setup
 log "📂 Copying Usernetes template from ${USERNETES_TEMPLATE_PATH}"
 cp -R "${USERNETES_TEMPLATE_PATH}" "${TMPDIR}/usernetes"
-cd "${TMPDIR}/usernetes" # Now inside the copied template
-sleep 3 # Allow filesystem operations to settle if needed
+
+ # Now inside the copied template
+cd "${TMPDIR}/usernetes"
+sleep 3
+
 
 log "👷 Building Usernetes container image 'usernetes_node'"
 ${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile -t usernetes_node $(pwd)

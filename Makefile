@@ -85,7 +85,7 @@ render: check-preflight
 up: check-preflight
 	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
 	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/docker-compose.yaml
-	$(COMPOSE) up --build -d
+	$(COMPOSE) up -d
 
 .PHONY: down
 down:
