@@ -150,7 +150,7 @@ cleanup() {
 cleanup
 
 log "    ⬆️ Bringing up the Usernetes node(s) with 'make up'"
-if ! make up; then
+if ! make up-built; then
     error_exit "Failed to bring up Usernetes with 'make up'."
 fi
 sleep 3

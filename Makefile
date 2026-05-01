@@ -27,10 +27,10 @@ export CONTAINER_ENGINE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.
 
 export CONTAINER_ENGINE_TYPE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh CONTAINER_ENGINE_TYPE)
 
-COMPOSE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh COMPOSE)
+COMPOSE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh COMPOSE) -f $(HERE)/compose/docker-compose.yaml
 
 NODE_SERVICE_NAME := node
-NODE_SHELL := $(COMPOSE) exec \
+NODE_SHELL := $(COMPOSE) $(COMPOSE_FILE) exec \
 	-e HOST_IP=$(HOST_IP) \
 	-e NODE_NAME=$(NODE_NAME) \
 	-e NODE_SUBNET=$(NODE_SUBNET) \
@@ -84,8 +84,14 @@ render: check-preflight
 .PHONY: up
 up: check-preflight
 	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
-	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/docker-compose.yaml
+	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/compose/docker-compose.yaml
 	$(COMPOSE) up -d
+
+.PHONY: up-built
+up-built: check-preflight
+	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
+	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/compose/docker-compose.yaml
+	$(COMPOSE) -f $(HERE)/compose/prebuilt-node.yaml up -d
 
 .PHONY: down
 down:
