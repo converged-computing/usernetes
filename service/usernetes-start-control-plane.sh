@@ -141,6 +141,7 @@ cleanup() {
     log "🧹 Cleaning up old networks or volumes (best effort)"
     make down-v || log "      'make down-v' failed, possibly because nothing was running. Continuing."
 
+
     # Explicit cleanup, as 'make down-v' might not cover everything or could fail
     "${container_runtime_path}" network rm usernetes_default -f || log "      Network 'usernetes_default' not found."
     "${container_runtime_path}" volume rm usernetes_node-var -f || log "      Volume 'usernetes_node-var' not found."
