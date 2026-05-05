@@ -104,6 +104,9 @@ mkdir -p "${XDG_RUNTIME_DIR}"
 setup_podman() {
     # These are likely to give issues. This resets podman with a vfs backend and then
     # cleans up tmp in the unshared context
+    if [[ -e "${HOME}/.config/containers/storage.conf" ]]; then
+        return    
+    fi
     if [[ -x "/collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh" ]]; then
         log "      Running enable-podman.sh vfs"
         if ! bash /collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh vfs; then
