@@ -5,7 +5,7 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-06-26-2025
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-develop
 
 # We will copy join command here
 shared_join_command_dir="/usr/workspace/usernetes"
@@ -101,9 +101,12 @@ mkdir -p "${XDG_RUNTIME_DIR}"
 setup_podman() {
     # These are likely to give issues. This resets podman with a vfs backend and then
     # cleans up tmp in the unshared context
+    if [[ -e "${HOME}/.config/containers/storage.conf" ]]; then
+        return    
+    fi
     if [[ -x "/collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh" ]]; then
         log "      Running enable-podman.sh vfs"
-        if ! bash /collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh vfs; then
+        if ! bash /collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh overlay; then
             log "      WARNING: enable-podman.sh script failed. Continuing, but podman might not be configured correctly."
         fi
     else
@@ -126,8 +129,13 @@ unshare_cleanup
 # Usernetes Specific Setup
 log "📂 Copying Usernetes template from ${USERNETES_TEMPLATE_PATH}"
 cp -R "${USERNETES_TEMPLATE_PATH}" "${TMPDIR}/usernetes"
-cd "${TMPDIR}/usernetes" # Now inside the copied template
-sleep 3 # Allow filesystem operations to settle if needed
+
+ # Now inside the copied template
+cd "${TMPDIR}/usernetes"
+sleep 3
+
+log "👷 Building Usernetes container image 'usernetes_base'"
+${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile.d/Dockerfile.base -t usernetes_base $(pwd)
 
 log "👷 Building Usernetes container image 'usernetes_node'"
 ${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile -t usernetes_node $(pwd)
@@ -135,6 +143,7 @@ ${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999
 cleanup() {
     log "🧹 Cleaning up old networks or volumes (best effort)"
     make down-v || log "      'make down-v' failed, possibly because nothing was running. Continuing."
+
 
     # Explicit cleanup, as 'make down-v' might not cover everything or could fail
     "${container_runtime_path}" network rm usernetes_default -f || log "      Network 'usernetes_default' not found."
@@ -145,7 +154,7 @@ cleanup() {
 cleanup
 
 log "    ⬆️ Bringing up the Usernetes node(s) with 'make up'"
-if ! make up; then
+if ! make up-built; then
     error_exit "Failed to bring up Usernetes with 'make up'."
 fi
 sleep 3
