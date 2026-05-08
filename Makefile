@@ -7,6 +7,8 @@ export PORT_KUBELET ?= 10250
 export PORT_FLANNEL ?= 8472
 export PORT_KUBE_APISERVER ?= 6443
 
+HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
 # HOSTNAME is the name of the physical host
 export HOSTNAME ?= $(shell hostname)
 # HOST_IP is the IP address of the physical host. Accessible from other hosts.
@@ -22,9 +24,7 @@ export NODE_SUBNET ?= $(shell $(CURDIR)/Makefile.d/node-subnet.sh)
 export NODE_IP := $(subst .0/24,.100,$(NODE_SUBNET))
 
 export CONTAINER_ENGINE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh CONTAINER_ENGINE)
-
 export CONTAINER_ENGINE_TYPE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh CONTAINER_ENGINE_TYPE)
-
 COMPOSE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh COMPOSE)
 
 NODE_SERVICE_NAME := node
@@ -82,8 +82,14 @@ render: check-preflight
 .PHONY: up
 up: check-preflight
 	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
-	sed -i "s/default_network/$(HOSTNAME)/g" docker-compose.yaml
-	$(COMPOSE) up --build -d
+	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/docker-compose.yaml
+	$(COMPOSE) up -d
+
+.PHONY: up-built
+up-built: check-preflight
+	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
+	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/docker-compose.yaml
+	$(COMPOSE) -f $(HERE)/docker-compose.yaml -f $(HERE)/compose/prebuilt-node.yaml up -d
 
 .PHONY: down
 down:
@@ -145,7 +151,7 @@ sync-external-ip:
 .PHONY: kubeadm-join
 kubeadm-join:
 	# Our kernel is too old for usernetes, so we need this
-	sed -i "s/--token/--ignore-preflight-errors=all --token/g" join-command
+	sed -i "s/--token/--ignore-preflight-errors=all --token/g" $(HERE)/join-command
 	$(NODE_SHELL) /bin/bash /usernetes/join-command
 	@echo "# Run 'make sync-external-ip' on the control plane"
 

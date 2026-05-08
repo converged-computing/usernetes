@@ -5,7 +5,18 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-06-26-2025
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-develop
+
+# Logging functions for consistency (like Akihiro!)
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
+}
+
+error_exit() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
+    exit 1
+}
+
 
 # The join command needs to be here
 shared_join_command_dir="/usr/workspace/usernetes"
@@ -37,16 +48,6 @@ log "    Updated PATH: ${PATH}"
 # Write to /tmp but scoped to the username
 # We don't want to use /var because that is a memory based fs
 export TMPDIR="/tmp/${USERNAME}"
-
-# Logging functions for consistency (like Akihiro!)
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
-}
-
-error_exit() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
-    exit 1
-}
 
 install_kubectl() {
     if ! command -v kubectl > /dev/null; then
@@ -103,6 +104,9 @@ mkdir -p "${XDG_RUNTIME_DIR}"
 setup_podman() {
     # These are likely to give issues. This resets podman with a vfs backend and then
     # cleans up tmp in the unshared context
+    if [[ -e "${HOME}/.config/containers/storage.conf" ]]; then
+        return    
+    fi
     if [[ -x "/collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh" ]]; then
         log "      Running enable-podman.sh vfs"
         if ! bash /collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh vfs; then
@@ -133,6 +137,9 @@ cp -R "${USERNETES_TEMPLATE_PATH}" "${TMPDIR}/usernetes"
 cd "${TMPDIR}/usernetes"
 sleep 3
 
+log "👷 Building Usernetes container image 'usernetes_base'"
+${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile.d/Dockerfile.base -t usernetes_base $(pwd)
+
 log "👷 Building Usernetes container image 'usernetes_node'"
 ${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile -t usernetes_node $(pwd)
 
@@ -149,7 +156,7 @@ cleanup() {
 cleanup
 
 log "    ⬆️ Bringing up the Usernetes node(s) with 'make up'"
-if ! make up; then
+if ! make up-built; then
     error_exit "Failed to bring up Usernetes with 'make up'."
 fi
 sleep 3

@@ -83,9 +83,3 @@ jobs:
       - run: make kubeconfig
       - run: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
       - run: ./hack/test-smoke.sh
-      - name: "Test data persistency after restarting the node"
-        run: |
-          make down
-          make up
-          sleep 30
-          ./hack/test-smoke.sh

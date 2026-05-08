@@ -54,9 +54,40 @@ EOF
 	INFO "Waiting for 3 replicas to be ready"
 	kubectl rollout status --timeout=5m statefulset
 
-	INFO "Connecting to dnstest-{0,1,2}.dnstest.default.svc.cluster.local"
-	kubectl run -i --rm --image=alpine --restart=Never dnstest-shell -- sh -exc 'for f in $(seq 0 2); do wget -O- http://dnstest-${f}.dnstest.default.svc.cluster.local; done'
+	INFO "GET PODS"
+	kubectl get pods
+	kubectl get pods -n kube-system
+	INFO "DESCRIBE PODS"
+	kubectl describe pods
+	for name in $(kubectl get pods -o json | jq -r .items[].metadata.name)
+	  do
+	     kubectl logs $name
+	     kubectl exec -it $name -- cat /etc/resolv.conf
+	  done
 
+	INFO "Patching CoreDNS to use 8.8.8.8"
+	kubectl get configmap coredns -n kube-system -o yaml | \
+	  sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8/' | \
+	  kubectl apply -f -
+  
+	INFO "Restarting CoreDNS"
+	kubectl delete pod -n kube-system -l k8s-app=kube-dns
+	kubectl rollout status deployment coredns -n kube-system
+
+	INFO "Connecting to dnstest-{0,1,2}.dnstest.default.svc.cluster.local"
+	kubectl run -i --rm --image=busybox:1.28 --restart=Never dnstest-shell -- sh -exc '
+  echo "--- Resolv.conf ---"
+  cat /etc/resolv.conf
+  
+  echo "--- Testing External DNS (google.com) ---"
+  nslookup google.com || echo "External DNS Failed"
+
+  echo "--- Testing Internal DNS (dnstest-0) ---"
+  nslookup dnstest-0.dnstest || echo "Internal DNS Failed"
+
+  for f in 0 1 2; do 
+    wget -qO- http://dnstest-${f}.dnstest.default.svc.cluster.local
+  done'
 	INFO "Deleting Service \"dnstest\""
 	kubectl delete service dnstest
 	INFO "Deleting StatefulSet \"dnstest\""

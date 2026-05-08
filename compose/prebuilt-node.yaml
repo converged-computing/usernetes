@@ -1,0 +1,3 @@
+services:
+  usernetes_node:
+    image: usernetes_node

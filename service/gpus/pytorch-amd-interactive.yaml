@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pytorch-non-privileged-gpu-pod
+spec:
+  restartPolicy: Never
+  hostIPC: true  
+  volumes:
+  - name: dshm
+    emptyDir:
+      medium: Memory
+  containers:
+  - name: pytorch-gpu-container
+    volumeMounts:
+    - mountPath: /dev/shm
+      name: dshm  
+    # Note, currently getting whiteour errors. The latest is incompatible with our old GPUs.
+    # This likely will work, but we need the right container.
+    image: rocm/pytorch:rocm5.4_ubuntu20.04_py3.8_pytorch_1.12.1
+    # image: rocm/pytorch:rocm5.7_ubuntu22.04_py3.10_pytorch_2.0.1
+    # image: rocm/pytorch:latest
+    command:
+    - sleep
+    - infinity
+    securityContext:
+      privileged: false
+      allowPrivilegeEscalation: false      
+      seccompProfile:
+        type: Unconfined
+    resources:
+      limits:
+        amd.com/gpu: 8

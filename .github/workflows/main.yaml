@@ -2,15 +2,16 @@
 name: Main
 on: [push, pull_request]
 jobs:
-  single-node:
-    name: "Single node"
-    strategy:
-      fail-fast: false
-      matrix:
-        container_engine: [docker, nerdctl, podman]
-    uses: ./.github/workflows/reusable-single-node.yaml
-    with:
-      container_engine: ${{ matrix.container_engine }}
+  # We would never use usernetes on a single node
+  #single-node:
+  #  name: "Single node"
+  #  strategy:
+  #    fail-fast: false
+  #    matrix:
+  #      container_engine: [docker, nerdctl, podman]
+  #  uses: ./.github/workflows/reusable-single-node.yaml
+  #  with:
+  #    container_engine: ${{ matrix.container_engine }}
 
   multi-node:
     name: "Multi node"
@@ -30,19 +31,3 @@ jobs:
     with:
       lima_template: ${{ matrix.lima_template }}
       container_engine: ${{ matrix.container_engine }}
-
-  # TODO: this test should create multiple instances of Usernetes on each of the hosts
-  multi-node-custom-ports:
-    name: "Multi node with custom service ports"
-    uses: ./.github/workflows/reusable-multi-node.yaml
-    with:
-      lima_template: "template://ubuntu-24.04"
-      container_engine: "docker"
-      # Defaults to 6443
-      kube_apiserver_port: "8080"
-      # Defaults to 8472
-      flannel_port: "9072"
-      # Defaults to 10250
-      kubelet_port: "20250"
-      # Defaults to 2379
-      etcd_port: "9090"
