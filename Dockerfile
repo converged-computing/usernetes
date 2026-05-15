@@ -35,8 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   gettext-base \
   moreutils \
   socat ipset wget
-ADD Dockerfile.d/etc_udev_rules.d_90-flannel.rules /etc/udev/rules.d/90-flannel.rules
-ADD Dockerfile.d/etc_udev_rules.d_95-calico.rules /etc/udev/rules.d/95-calico.rules
+ADD Dockerfile.d/etc_udev_rules.d_90-flannel-calico.rules /etc/udev/rules.d/90-flannel-calico.rules
 ADD Dockerfile.d/u7s-entrypoint.sh /
 # Calico
 ENV FELIX_IGNORELOOSERPF=true
