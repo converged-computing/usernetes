@@ -46,11 +46,13 @@ RUN arch="$(uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64/)" && \
 # moreutils: for `sponge`
 # socat: for `socat` (to silence "[WARNING FileExisting-socat]" from kubeadm)
 # ipset: for using calico and command line utils
+# yq: needed to install custom calico manifests
 RUN apt-get update && apt-get install -y --no-install-recommends \
   gettext-base \
   moreutils \
   socat \
   ipset \
+  yq \
   && rm -rf /var/lib/apt/lists/*
 # Calico
 ENV FELIX_IGNORELOOSERPF=true

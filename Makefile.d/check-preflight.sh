@@ -17,8 +17,8 @@ detect_engine="${script_dir}"/detect-container-engine.sh
 : "${CONTAINER_ENGINE:=$("${detect_engine}" CONTAINER_ENGINE)}"
 : "${CONTAINER_ENGINE_TYPE:=$("${detect_engine}" CONTAINER_ENGINE_TYPE)}"
 
-# Set to 1 since we will do calico by default
-: "${QUICK:=1}"
+# 1 will deploy calico by default
+: "${QUICK:=0}"
 : "${BUSYBOX_IMAGE:=docker.io/library/busybox:latest}"
 
 if [ -z "${CONTAINER_ENGINE}" ] || [ -z "${CONTAINER_ENGINE_TYPE}" ]; then

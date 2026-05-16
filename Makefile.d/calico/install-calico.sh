@@ -58,3 +58,10 @@ kubectl apply --server-side -f /usernetes/Makefile.d/calico/calico-ethtool.yaml
 # 1. make sync-external-ip and make install-calico
 # the second has a daemonset to apply these commands
 # ethtool -K vxlan.calico tx-checksum-ip-generic off
+
+for node in $(kubectl get nodes -o name); do
+    # Extracts the node name and tell calico host for its BGP peering
+	# BGP mesh will not connect without this correct address
+    nodename=$(cut -d / -f 2 <<< $node)
+    calicoctl --allow-version-mismatch patch node ${nodename} --patch='{"spec": {"bgp":{"ipv4Address": "'"$host_ip"'"}}}'
+done
