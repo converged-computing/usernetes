@@ -1,14 +1,12 @@
 #!/bin/bash
 
-# Install standard Calico
-CALICO_VERSION="v3.31"
-CALICO_FILE="calico.yaml"
-wget https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-v3.31/manifests/calico.yaml -O $CALICO_FILE
+# Install standard Calico (downloaded in Dockerfile on build)
+CALICO_FILE="/calico.yaml"
 
 # backend to vxlan
 yq eval-all -i '(select(.kind == "ConfigMap" and .metadata.name == "calico-config").data.calico_backend) = "vxlan"' $CALICO_FILE
 
-# IPIP and VXLAN
+# Disable IPIP and enable CrossSubnet VXLAN for IPv4/IPv6 in the Calico manifest
 yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV4POOL_IPIP").value) = "Never"' $CALICO_FILE
 yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV4POOL_VXLAN").value) = "CrossSubnet"' $CALICO_FILE
 yq eval-all -i '(select(.kind == "DaemonSet" and .metadata.name == "calico-node").spec.template.spec.containers[0].env[] | select(.name == "CALICO_IPV6POOL_VXLAN").value) = "CrossSubnet"' $CALICO_FILE
