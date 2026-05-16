@@ -16,6 +16,8 @@ script_dir="$(dirname "$0")"
 detect_engine="${script_dir}"/detect-container-engine.sh
 : "${CONTAINER_ENGINE:=$("${detect_engine}" CONTAINER_ENGINE)}"
 : "${CONTAINER_ENGINE_TYPE:=$("${detect_engine}" CONTAINER_ENGINE_TYPE)}"
+
+# 1 will deploy calico by default
 : "${QUICK:=0}"
 : "${BUSYBOX_IMAGE:=docker.io/library/busybox:latest}"
 
