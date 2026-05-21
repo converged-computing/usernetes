@@ -5,7 +5,7 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-develop
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-ipa
 
 # Logging functions for consistency (like Akihiro!)
 log() {

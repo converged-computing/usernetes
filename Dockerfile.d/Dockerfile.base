@@ -2,10 +2,12 @@ ARG BASE_IMAGE=docker.io/kindest/node:v1.33.0@sha256:91e9ed777db80279c22d1d1068c
 ARG CNI_PLUGINS_VERSION=v1.7.1
 ARG HELM_VERSION=v3.17.3
 ARG FLANNEL_VERSION=v0.26.7
+ARG CALICO_VERSION=v3.30.5
 FROM ${BASE_IMAGE}
 COPY Dockerfile.d/SHA256SUMS.d/ /tmp/SHA256SUMS.d
 ARG CNI_PLUGINS_VERSION
 ARG HELM_VERSION
+ARG CALICO_VERSION
 ARG FLANNEL_VERSION
 RUN arch="$(uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64/)" && \
   fname="cni-plugins-linux-${arch}-${CNI_PLUGINS_VERSION}.tgz" && \
@@ -23,7 +25,19 @@ RUN arch="$(uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64/)" && \
   curl --insecure -o "${fname}" -fSL "https://github.com/flannel-io/flannel/releases/download/${FLANNEL_VERSION}/${fname}" && \
   grep "${fname}" "/tmp/SHA256SUMS.d/flannel-${FLANNEL_VERSION}" | sha256sum -c && \
   tar xzf "${fname}" -C / && \
-  rm -f "${fname}"
+  rm -f "${fname}" && \
+  # Calico (calicoctl)
+  fname="calicoctl-linux-${arch}" && \
+  curl -o "${fname}" -fSL "https://github.com/projectcalico/calico/releases/download/${CALICO_VERSION}/${fname}" && \
+  grep "${fname}" "/tmp/SHA256SUMS.d/calico-${CALICO_VERSION}" | sha256sum -c && \
+  chmod +x "${fname}" && \
+  mv "${fname}" /usr/local/bin/calicoctl && \
+  # Calico manifest - derive v3.31 from v3.31.5
+  calico_branch="$(echo "${CALICO_VERSION}" | cut -d. -f1,2)" && \
+  fname="calico.yaml" && \
+  curl -o "/${fname}" -fSL "https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-${calico_branch}/manifests/calico.yaml" && \
+  grep "${fname}" "/tmp/SHA256SUMS.d/calico-manifest-${CALICO_VERSION}" | sha256sum -c
+  
 # gettext-base: for `envsubst`
 # moreutils: for `sponge`
 # socat: for `socat` (to silence "[WARNING FileExisting-socat]" from kubeadm)
