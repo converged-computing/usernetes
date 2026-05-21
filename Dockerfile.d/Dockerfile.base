@@ -37,7 +37,7 @@ RUN arch="$(uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64/)" && \
   fname="calico.yaml" && \
   curl -o "/${fname}" -fSL "https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-${calico_branch}/manifests/calico.yaml" && \
   grep "${fname}" "/tmp/SHA256SUMS.d/calico-manifest-${CALICO_VERSION}" | sha256sum -c
-  
+
 # gettext-base: for `envsubst`
 # moreutils: for `sponge`
 # socat: for `socat` (to silence "[WARNING FileExisting-socat]" from kubeadm)
@@ -45,6 +45,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   gettext-base \
   moreutils \
   socat ipset wget
-ADD Dockerfile.d/etc_udev_rules.d_90-flannel.rules /etc/udev/rules.d/90-flannel.rules
+ADD Dockerfile.d/etc_udev_rules.d_90-flannel-calico.rules /etc/udev/rules.d/90-flannel-calico.rules
 ADD Dockerfile.d/u7s-entrypoint.sh /
 ENTRYPOINT ["/u7s-entrypoint.sh", "/usr/local/bin/entrypoint", "/sbin/init"]

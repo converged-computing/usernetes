@@ -60,8 +60,6 @@ install_kubectl() {
     command -v kubectl > /dev/null || error_exit "kubectl not found after installation attempt."
 }
 
-
-
 # Pre-flight Checks & Setup
 log "🎬 Starting Usernetes Control Plane Setup"
 log "    Temporary directory: ${TMPDIR}"
@@ -93,7 +91,8 @@ install_kubectl
 log "    📦 Configuring ${container_runtime_path}"
 
 log "🦋 Setting up Environment for Usernetes"
-export XDG_RUNTIME_DIR="${TMPDIR}/.usernetes/runtime"
+# export XDG_RUNTIME_DIR="${TMPDIR}/.usernetes/runtime"
+# TODO need to test what this is set to.
 log "    XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR}"
 rm -rf "${XDG_RUNTIME_DIR}" # Clean slate
 mkdir -p "${XDG_RUNTIME_DIR}"
@@ -220,7 +219,6 @@ cat <<EOF > source_env.sh
 #!/bin/bash
 export PATH=~/.local/bin:$PATH
 export KUBECONFIG=$TMPDIR/usernetes/kubeconfig
-export XDG_RUNTIME_DIR=$TMPDIR/.usernetes/runtime
 source <(kubectl completion bash)
 EOF
 
