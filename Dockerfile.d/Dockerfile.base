@@ -36,7 +36,8 @@ RUN arch="$(uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64/)" && \
   calico_branch="$(echo "${CALICO_VERSION}" | cut -d. -f1,2)" && \
   fname="calico.yaml" && \
   curl -o "/${fname}" -fSL "https://raw.githubusercontent.com/projectcalico/calico/refs/heads/release-${calico_branch}/manifests/calico.yaml" && \
-  grep "${fname}" "/tmp/SHA256SUMS.d/calico-manifest-${CALICO_VERSION}" | sha256sum -c
+  grep "${fname}" "/tmp/SHA256SUMS.d/calico-manifest-${CALICO_VERSION}" | sha256sum -c && \
+  curl -o yq -fSL https://github.com/mikefarah/yq/releases/download/v4.2.0/yq_linux_amd64 && chmod +x yq && mv yq /usr/bin/yq
 
 # gettext-base: for `envsubst`
 # moreutils: for `sponge`
