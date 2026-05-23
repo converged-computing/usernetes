@@ -1,0 +1,40 @@
+# explicitly use v2 config format
+version = 2
+
+# 1. Proxy Plugin Configuration (This is the Usernetes way)
+# This points containerd to the socket where usernetes-identity/fuse-overlayfs is listening
+[proxy_plugins]
+  [proxy_plugins."fuse-overlayfs"]
+    type = "snapshot"
+    address = "/run/containerd-fuse-overlayfs.sock"
+
+# 2. Fix for ImageGCFailed
+# We must explicitly define the snapshotter root path so the Kubelet GC
+# can find the directory to calculate disk usage stats.
+[plugins."io.containerd.snapshotter.v1.fuse-overlayfs"]
+  root_path = "/var/lib/containerd/io.containerd.snapshotter.v1.fuse-overlayfs"
+
+# 3. CRI Plugin Configuration
+[plugins."io.containerd.grpc.v1.cri"]
+  sandbox_image = "registry.k8s.io/pause:3.10"
+  tolerate_missing_hugepages_controller = true
+  restrict_oom_score_adj = true
+
+  [plugins."io.containerd.grpc.v1.cri".containerd]
+    # Use the name defined in [proxy_plugins]
+    snapshotter = "fuse-overlayfs"
+    discard_unpacked_layers = true
+    default_runtime_name = "runc"
+
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+      runtime_type = "io.containerd.runc.v2"
+      base_runtime_spec = "/etc/containerd/cri-base.json"
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+        SystemdCgroup = true
+
+# Enable NRI (Required to programmatically squash to 2048 UID range)
+[plugins."io.containerd.nri.v1.nri"]
+  disable = false
+  disable_connections = false
+  plugin_path = "/opt/nri/plugins"
+
