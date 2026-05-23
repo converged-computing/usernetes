@@ -1,14 +1,14 @@
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 RUN apt-get update && apt-get install -y git libseccomp-dev pkg-config
 
 WORKDIR /src
 RUN git clone -b ipa-updates https://github.com/converged-computing/usernetes-identity.git . && \
-    make  && chmod +x ./bin/*
-FROM usernetes_base
+    go mod download && go mod vendor && make  && chmod +x ./bin/*
+FROM docker.io/library/usernetes_base:latest
 
 COPY --from=builder /src/bin/usernetes-identity /usr/bin/usernetes-identity
-COPY --from=builder /src/bin/usernetes-identity-nri /opt/nri/plugins/usernetes-identity-nri
+COPY --from=builder /src/bin/usernetes-identity-nri /opt/nri/plugins/05-usernetes-identity-nri
 
 # Private certificates and security profiles
 COPY cspca.llnl.gov.cer.pem /usr/local/share/ca-certificates/

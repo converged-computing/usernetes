@@ -134,7 +134,7 @@ cd "${TMPDIR}/usernetes"
 sleep 3
 
 log "👷 Building Usernetes container image 'usernetes_base'"
-${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile.d/Dockerfile.base -t usernetes_base $(pwd)
+${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile.d/Dockerfile.base -t docker.io/library/usernetes_base:latest $(pwd)
 
 log "👷 Building Usernetes container image 'usernetes_node'"
 ${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile -t usernetes_node $(pwd)
