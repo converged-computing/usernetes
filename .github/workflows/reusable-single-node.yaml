@@ -25,8 +25,8 @@ on:
         type: string
         default: "6443"
 
-# https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idpermissions
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   single-node:
@@ -41,7 +41,12 @@ jobs:
       PORT_ETCD: "${{ inputs.etcd_port }}"
       KUBECONFIG: ./kubeconfig
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - name: Load kernel modules
+        run: |
+          sudo modprobe br_netfilter
+          sudo modprobe iptable_nat
+          sudo modprobe vxlan
       - name: Set up cgroup v2 delegation
         run: |
           sudo mkdir -p /etc/systemd/system/user@.service.d
