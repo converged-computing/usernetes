@@ -11,7 +11,7 @@ set -eux -o pipefail
 : "${PORT_FLANNEL:=8472}"
 : "${PORT_KUBELET:=10250}"
 
-guest_home="/home/${USER}.linux"
+guest_home="/home/${USER}.guest"
 
 if [ "$(id -u)" -le 1000 ]; then
 	# In --plain mode, UID has to be >= 1000 to populate subuids
