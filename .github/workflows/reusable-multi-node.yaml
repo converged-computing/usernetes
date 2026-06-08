@@ -36,8 +36,8 @@ on:
         type: string
         default: "6443"
 
-# https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idpermissions
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   multi-node:
