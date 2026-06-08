@@ -46,7 +46,8 @@ done
 ${LIMACTL} shell host0 ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" kubeadm-init install-flannel kubeconfig join-command
 
 # Let host1 join the cluster
-${LIMACTL} copy host0:~/usernetes/join-command host1:~/usernetes/join-command
+${LIMACTL} copy host0:~/usernetes/join-command ./join-command
+${LIMACTL} copy ./join-command host1:~/usernetes/join-command
 ${LIMACTL} shell host1 ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" kubeadm-join
 ${LIMACTL} shell host0 ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" sync-external-ip
 
