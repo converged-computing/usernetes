@@ -161,7 +161,7 @@ join-command:
 .PHONY: kubeadm-init
 kubeadm-init:
 	$(NODE_SHELL) sh -euc "envsubst </usernetes/kubeadm-config.yaml >/tmp/kubeadm-config.yaml"
-	$(NODE_SHELL) kubeadm init --ignore-preflight-errors all --config /tmp/kubeadm-config.yaml --skip-token-print
+	$(NODE_SHELL) kubeadm init --config /tmp/kubeadm-config.yaml --skip-token-print
 	$(MAKE) sync-external-ip
 	@echo "# Run 'make join-command' to print the join command"
 

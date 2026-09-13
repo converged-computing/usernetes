@@ -5,7 +5,7 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-develop
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-wip
 
 # Logging functions for consistency (like Akihiro!)
 log() {
@@ -156,7 +156,7 @@ cleanup() {
 cleanup
 
 log "    ⬆️ Bringing up the Usernetes node(s) with 'make up'"
-if ! make up-built; then
+if ! CNI=calico make up-built; then
     error_exit "Failed to bring up Usernetes with 'make up'."
 fi
 sleep 3

@@ -5,7 +5,7 @@ set -euo pipefail
 # These are variables we likely will change
 # LC only supplies podman
 USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-develop
+USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-wip
 
 # We will copy join command here
 shared_join_command_dir="/usr/workspace/usernetes"
@@ -61,7 +61,6 @@ install_kubectl() {
 }
 
 
-
 # Pre-flight Checks & Setup
 log "🎬 Starting Usernetes Control Plane Setup"
 log "    Temporary directory: ${TMPDIR}"
@@ -88,6 +87,15 @@ log "    Found ${USERNETES_CONTAINER_TECH} at ${container_runtime_path}"
 # Install kubectl if not present
 log "    👀 Looking for kubectl"
 install_kubectl
+
+# Make a file to easily source to get environment
+cat <<EOF > source_env.sh
+#!/bin/bash
+export PATH=~/.local/bin:$PATH
+export KUBECONFIG=$TMPDIR/usernetes/kubeconfig
+export XDG_RUNTIME_DIR=$TMPDIR/.usernetes/runtime
+source <(kubectl completion bash)
+EOF
 
 # Cleanup any previous podman context, setup with vhs
 log "    📦 Configuring ${container_runtime_path}"
@@ -153,20 +161,21 @@ cleanup() {
 }
 cleanup
 
+# quick mode disables checking rp_filter
 log "    ⬆️ Bringing up the Usernetes node(s) with 'make up'"
-if ! make up-built; then
+if ! CNI=calico QUICK=1 make up-built; then
     error_exit "Failed to bring up Usernetes with 'make up'."
 fi
 sleep 3
 
 log "🔐 Running kubeadm-init with 'make kubeadm-init'"
-if ! make kubeadm-init; then
+if ! CNI=calico make kubeadm-init; then
     error_exit "Failed 'make kubeadm-init'."
 fi
 sleep 3
 
 log "🥷 Creating kubeconfig with 'make kubeconfig'"
-if ! make kubeconfig; then
+if ! CNI=calico make kubeconfig; then
     error_exit "Failed 'make kubeconfig'."
 fi
 export KUBECONFIG="${TMPDIR}/usernetes/kubeconfig"
@@ -215,14 +224,9 @@ cp join-command ${shared_join_command_dir}
 log "🎉 Usernetes Control Plane setup complete. Kubeconfig is at: ${KUBECONFIG}"
 log "🚀 Service will now idle indefinitely. Process ID: $$"
 
-# Make a file to easily source to get environment
-cat <<EOF > source_env.sh
-#!/bin/bash
-export PATH=~/.local/bin:$PATH
-export KUBECONFIG=$TMPDIR/usernetes/kubeconfig
-export XDG_RUNTIME_DIR=$TMPDIR/.usernetes/runtime
-source <(kubectl completion bash)
-EOF
+# manual
+# CNI=calico make install-cni
+# make sync-external-ip
 
 # Keep the script running so systemd considers the service active.
 # The actual k8s processes are managed by containerd/kubelet inside the usernetes_node container.
