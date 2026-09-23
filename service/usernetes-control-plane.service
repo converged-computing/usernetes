@@ -6,7 +6,12 @@ After=network-online.target
 Type=simple
 ExecStart=/usr/workspace/usernetes/service/usernetes-start-control-plane.sh podman
 LimitMEMLOCK=infinity
-# Environment="USERNETES_CONTAINER_TECH_ARG=podman"
+# Optional overrides (see service/usernetes-common.sh for the full list).
+# Podman storage is discovered under /mnt/nnf/<uuid>-N on each node; set
+# USERNETES_STORAGE_ROOT to bypass discovery, e.g. on a node without a rabbit.
+# Environment="USERNETES_STORAGE_ROOT=/tmp/%u/podman-storage"
+# Environment="USERNETES_STORAGE_DRIVER=vfs"
+# Environment="USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-wip"
 
 # Standard output and error
 # Customize this to where you want it.  

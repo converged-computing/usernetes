@@ -3,11 +3,38 @@
 We were having trouble with interactive and ssh execution, so I am testing writing a systemctl user service.
 For this to work, add each of the .service files to `~/.config/systemd/user` and then do the following.
 
+## Layout
+
+- `usernetes-common.sh`: shared setup sourced by both start scripts (home and PATH, kubectl, rabbit storage discovery, podman storage.conf, template copy, image builds, stale cleanup).
+- `usernetes-start-control-plane.sh`: common setup, then `kubeadm-init`, kubeconfig, untaint, and copying the join command to the shared filesystem.
+- `usernetes-start-worker.sh`: common setup, then `kubeadm-join` using the shared join command.
+- `usernetes-control-plane.service` / `usernetes-worker.service`: the user units. Every knob is an environment variable documented at the top of `usernetes-common.sh` and can be set with an `Environment=` line in the unit.
+
+## Storage (rabbit)
+
+Each physical node has its own rabbit (NNF) storage mounted at `/mnt/nnf/<uuid>-N`, and podman storage has to live there rather than in `$HOME`, which is shared across nodes. On start, each service:
+
+1. Looks under `/mnt/nnf` (override with `USERNETES_RABBIT_MOUNT`) and expects exactly one directory. Zero or more than one is an error. Set `USERNETES_STORAGE_ROOT` to skip discovery, for example on a node without a rabbit.
+2. Writes a per-node `storage.conf` onto the rabbit and points podman at it with `CONTAINERS_STORAGE_CONF`. Nothing in `~/.config/containers` is read or modified, so nodes cannot clobber each other.
+3. Verifies with `podman info` that the graphroot really is on the rabbit before building any images.
+
+The layout under the rabbit is:
+
+```
+/mnt/nnf/<uuid>-0/usernetes/
+├── run-<uid>/containers/            # runroot
+└── config/containers/
+    ├── storage.conf                 # CONTAINERS_STORAGE_CONF
+    └── storage/                     # graphroot (images, layers, compose volumes)
+```
+
+The driver defaults to `vfs`; set `USERNETES_STORAGE_DRIVER=overlay` to try native rootless overlay.
+
 ## Usage
 
 ### Allocation
 
-Request a flux alloc for the control plane and a worker, for however many minutes or hours you need.
+Request a flux alloc for the control plane and a worker, for however many minutes or hours you need, with rabbit storage.
 
 ```bash
 flux alloc --bg -N2 -q pbatch -t 8h
@@ -16,9 +43,9 @@ flux alloc --bg -N2 -q pbatch -t 8h
 ### Control Plane
 
 ```bash
-ssh corona189
+ssh <control-plane-node>
 # For the control plane - start
-rm -rf /usr/workspace/usernetes/control-plane.log 
+rm -rf /usr/workspace/usernetes/control-plane.log
 systemctl --user start usernetes-control-plane
 systemctl --user status usernetes-control-plane
 # check log in /usr/workspace/usernetes/control-plane.log
@@ -29,36 +56,40 @@ Importantly, in the above you need a podman-compose that has the line to add a l
 ### Worker
 
 ```bash
-ssh corona190
-rm -rf /usr/workspace/usernetes/worker.log 
+ssh <worker-node>
+rm -rf /usr/workspace/usernetes/worker.log
 systemctl --user start usernetes-worker
 systemctl --user status usernetes-worker
 # check log in /usr/workspace/usernetes/worker.log
 ```
 
-Back on the control plane (if everything looks good) we can go to the copied control plane directory, source a file to get kubectl and the correct paths, and see our cluster.
+### Using the cluster (and podman) on a node
+
+Each service writes `/tmp/$USER/usernetes/source_env.sh` right after copying the template, so it exists while images are still building. It exports the runtime dir, `CNI`, and the rabbit-backed `CONTAINERS_STORAGE_CONF`; on the control plane it also sets `KUBECONFIG`. Source it in any shell where you want `podman`, `make`, or `kubectl` to see what the service sees.
 
 ```bash
+cd /tmp/$USER/usernetes
 . source_env.sh
+podman images        # served from /mnt/nnf/<uuid>-0/usernetes/config/containers/storage
 ```
 ```console
-[sochat1@corona190:service]$ kubectl get nodes
-NAME            STATUS    ROLES           AGE   VERSION
-u7s-corona190   NotReady  control-plane   3m20s v1.30.0
-u7s-corona196   NotReady  <none>          1m3s  v1.30.0
+[sochat1@hetchy1017:usernetes]$ kubectl get nodes
+NAME              STATUS    ROLES           AGE   VERSION
+u7s-hetchy1017    NotReady  control-plane   3m20s v1.37.0
+u7s-hetchy1018    NotReady  <none>          1m3s  v1.37.0
 ```
 
-Importantly, the ips need to be sync'd (and an annotation added for flannel) after nodes are up. They will all be `NotReady`.
+Importantly, the CNI needs to be installed and the ips sync'd after nodes are up. They will all be `NotReady` until then. `CNI=calico` is already exported by `source_env.sh`.
 
 ```bash
+make install-cni
 make sync-external-ip
-make install-flannel
 ```
 ```console
-[sochat1@corona190:service]$ kubectl get nodes
-NAME            STATUS   ROLES           AGE   VERSION
-u7s-corona190   Ready    control-plane   5m    v1.30.0
-u7s-corona196   Ready    <none>          3m7s  v1.30.0
+[sochat1@hetchy1017:usernetes]$ kubectl get nodes
+NAME              STATUS   ROLES           AGE   VERSION
+u7s-hetchy1017    Ready    control-plane   5m    v1.37.0
+u7s-hetchy1018    Ready    <none>          3m7s  v1.37.0
 ```
 
 Install the Flux Operator...

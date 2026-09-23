@@ -1,184 +1,45 @@
 #!/bin/bash
+#
+# Usernetes worker user service. Shared setup lives in usernetes-common.sh;
+# this script only does the worker-specific kubeadm join.
 
 set -euo pipefail
 
-# These are variables we likely will change
-# LC only supplies podman
-USERNETES_CONTAINER_TECH=${1:-"podman"} 
-USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-wip
+# First argument (from the .service file) selects the container engine.
+export USERNETES_CONTAINER_TECH="${1:-${USERNETES_CONTAINER_TECH:-podman}}"
 
-# Logging functions for consistency (like Akihiro!)
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - INFO - $1"
-}
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# shellcheck source=usernetes-common.sh
+source "${here}/usernetes-common.sh"
 
-error_exit() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" >&2
-    exit 1
-}
-
-
-# The join command needs to be here
-shared_join_command_dir="/usr/workspace/usernetes"
-if [ ! -f "${shared_join_command_dir}/join-command" ]
-  then
-    error_exit "Cannot find join-command in ${shared_join_command_dir}"
+# The control plane leaves the join command on the shared filesystem.
+# Check before doing any expensive setup.
+if [[ ! -f "${USERNETES_SHARED_DIR}/join-command" ]]; then
+    error_exit "Cannot find join-command in ${USERNETES_SHARED_DIR}. Is the control plane up?"
 fi
 
-# The user needs to run the setup script
-USERNAME=$(whoami)
+# Home, PATH, kubectl, rabbit-backed podman storage, template copy, image
+# builds, and stale cleanup. Leaves us in ${TMPDIR}/usernetes.
+usernetes_common_setup worker
 
-# This is way a lot for just deriving home, but I'm not convinced it will always
-# be defined in the environment
-if [[ -z "${HOME:-}" || ! -d "${HOME}" ]]; then
-    user_home_dir=$(getent passwd "${USERNAME}" | cut -d: -f6)
-    if [[ -z "${user_home_dir}" || ! -d "${user_home_dir}" ]]; then
-        error_exit "Cannot determine user's home directory. HOME variable is not set or invalid, and getent failed."
-    fi
-    export HOME="${user_home_dir}"
-    log "WARNING: HOME variable was not initially set or valid. Using '${HOME}' from system lookup."
-fi
-
-# Add user's local bin to PATH
-LOCAL_BIN_DIR="${HOME}/.local/bin"
-mkdir -p "${LOCAL_BIN_DIR}"
-export PATH="${LOCAL_BIN_DIR}:${PATH}"
-log "    Updated PATH: ${PATH}"
-
-# Write to /tmp but scoped to the username
-# We don't want to use /var because that is a memory based fs
-export TMPDIR="/tmp/${USERNAME}"
-
-install_kubectl() {
-    if ! command -v kubectl > /dev/null; then
-        log "Installing kubectl..."
-        curl -sSfLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        chmod +x ./kubectl
-        mv ./kubectl "${LOCAL_BIN_DIR}/"
-        log "      kubectl installed to ${LOCAL_BIN_DIR}/kubectl"
-    else
-        log "      kubectl found at $(command -v kubectl)"
-    fi
-    command -v kubectl > /dev/null || error_exit "kubectl not found after installation attempt."
-}
-
-
-
-# Pre-flight Checks & Setup
-log "🎬 Starting Usernetes Control Plane Setup"
-log "    Temporary directory: ${TMPDIR}"
-mkdir -p "${TMPDIR}"
-cd "${TMPDIR}"
-
-if [[ ! -d "${USERNETES_TEMPLATE_PATH}" ]]; then
-   error_exit "Usernetes template ${USERNETES_TEMPLATE_PATH} does not exist"
-fi
-
-log "    📦 Container technology: ${USERNETES_CONTAINER_TECH}"
-export CONTAINER_TECHNOLOGY="${USERNETES_CONTAINER_TECH}"
-export CONTAINER_ENGINE="${USERNETES_CONTAINER_TECH}"
-
-# Ensure container software is installed
-log "    🔎 Checking for ${USERNETES_CONTAINER_TECH}..."
-if ! command -v "${USERNETES_CONTAINER_TECH}" > /dev/null; then
-  error_exit "Could not find ${USERNETES_CONTAINER_TECH}. Please ensure it's installed and in PATH."
-fi
-
-container_runtime_path=$(command -v "${USERNETES_CONTAINER_TECH}")
-log "    Found ${USERNETES_CONTAINER_TECH} at ${container_runtime_path}"
-
-
-# Install kubectl if not present
-log "    👀 Looking for kubectl"
-install_kubectl
-
-# Cleanup any previous podman context, setup with vhs
-log "    📦 Configuring ${container_runtime_path}"
-
-log "🦋 Setting up Environment for Usernetes"
-export XDG_RUNTIME_DIR="${TMPDIR}/.usernetes/runtime"
-log "    XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR}"
-rm -rf "${XDG_RUNTIME_DIR}" # Clean slate, sweep sweep!
-mkdir -p "${XDG_RUNTIME_DIR}"
-
-setup_podman() {
-    # These are likely to give issues. This resets podman with a vfs backend and then
-    # cleans up tmp in the unshared context
-    if [[ -e "${HOME}/.config/containers/storage.conf" ]]; then
-        return    
-    fi
-    if [[ -x "/collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh" ]]; then
-        log "      Running enable-podman.sh vfs"
-        if ! bash /collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh vfs; then
-            log "      WARNING: enable-podman.sh script failed. Continuing, but podman might not be configured correctly."
-        fi
-    else
-        log "      WARNING: /collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh not found or not executable."
-    fi
-}
-setup_podman
-
-unshare_cleanup() {
-    log "      Ensuring buildah is available for unshare..."
-    if command -v buildah > /dev/null; then
-        log "      Running buildah unshare rm -rf ${TMPDIR}/* (if exists)"
-        buildah unshare rm -rf "${TMPDIR}/"* || log "      buildah unshare cleanup command failed, this might be okay if no prior data."
-    else
-        log "      WARNING: buildah not found. Skipping unshare cleanup."
-    fi
-}
-unshare_cleanup
-
-# Usernetes Specific Setup
-log "📂 Copying Usernetes template from ${USERNETES_TEMPLATE_PATH}"
-cp -R "${USERNETES_TEMPLATE_PATH}" "${TMPDIR}/usernetes"
-
-# Now inside the copied template
-cd "${TMPDIR}/usernetes"
-sleep 3
-
-log "👷 Building Usernetes container image 'usernetes_base'"
-${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile.d/Dockerfile.base -t usernetes_base $(pwd)
-
-log "👷 Building Usernetes container image 'usernetes_node'"
-${container_runtime_path} build --userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2 -f $(pwd)/Dockerfile -t usernetes_node $(pwd)
-
-cleanup() {
-    log "🧹 Cleaning up old networks or volumes (best effort)"
-    make down-v || log "      'make down-v' failed, possibly because nothing was running. Continuing."
-
-    # Explicit cleanup, as 'make down-v' might not cover everything or could fail
-    "${container_runtime_path}" network rm usernetes_default -f || log "      Network 'usernetes_default' not found."
-    "${container_runtime_path}" volume rm usernetes_node-var -f || log "      Volume 'usernetes_node-var' not found."
-    "${container_runtime_path}" volume rm usernetes_node-opt -f || log "      Volume 'usernetes_node-opt' not found."
-    "${container_runtime_path}" volume rm usernetes_node-etc -f || log "      Volume 'usernetes_node-etc' not found."
-}
-cleanup
-
-log "    ⬆️ Bringing up the Usernetes node(s) with 'make up'"
-if ! CNI=calico make up-built; then
-    error_exit "Failed to bring up Usernetes with 'make up'."
+log "    ⬆️ Bringing up the Usernetes node(s) with 'make up-built'"
+if ! make up-built; then
+    error_exit "Failed to bring up Usernetes with 'make up-built'."
 fi
 sleep 3
 
 # Copy the join-command
-cp "${shared_join_command_dir}/join-command" join-command
+cp "${USERNETES_SHARED_DIR}/join-command" join-command
 chmod +x join-command
 
-log "🥷 Creating kubeconfig with 'make kubeconfig'"
+log "🤝 Joining the cluster with 'make kubeadm-join'"
 if ! make kubeadm-join; then
     error_exit "Failed 'make kubeadm-join'."
 fi
 
 log "🎉 Usernetes worker node setup complete."
+log "    To use podman against this node's storage: source ${TMPDIR}/usernetes/source_env.sh"
 log "🚀 Service will now idle indefinitely. Process ID: $$"
-
-# Make a file to easily source to get environment
-cat <<EOF > source_env.sh
-#!/bin/bash
-export PATH=~/.local/bin:$PATH
-export XDG_RUNTIME_DIR=$TMPDIR/.usernetes/runtime
-EOF
 
 # Keep the script running so systemd considers the service active.
 # The actual k8s processes are managed by containerd/kubelet inside the usernetes_node container.
