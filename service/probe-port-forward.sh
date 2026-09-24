@@ -45,7 +45,9 @@ listen)
     podman image exists "${image}" || podman pull -q "${image}" || exit 1
     netflag=(); [[ -n "${network}" ]] && netflag=(--network "${network}")
     echo "starting listener on UDP ${port}; wait for the READY line, then run on the other node:"
-    echo "    $(readlink -f "$0") send $(hostname -I | awk '{print $1}') --port ${port}"
+    # Same rule as the usernetes Makefile's HOST_IP: the source address of the default route.
+    host_ip=$(ip --json route get 1 2>/dev/null | jq -r '.[0].prefsrc' 2>/dev/null || hostname -I | awk '{print $1}')
+    echo "    $(readlink -f "$0") send ${host_ip} --port ${port}"
     podman run --rm "${netflag[@]}" -p "${port}:${port}/udp" "${image}" python3 -u - "${port}" <<'EOF'
 import socket, struct, sys, subprocess
 IP_PKTINFO = 8  # linux; not exported by the socket module
