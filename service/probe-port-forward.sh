@@ -44,11 +44,8 @@ listen)
     echo "podman $(podman --version | awk '{print $3}'), network mode: ${network:-default bridge (rootlessport)}"
     podman image exists "${image}" || podman pull -q "${image}" || exit 1
     netflag=(); [[ -n "${network}" ]] && netflag=(--network "${network}")
-    echo "starting listener on UDP ${port}; wait for the READY line, then run on the other node:"
-    # Same rule as the usernetes Makefile's HOST_IP: the source address of the default route.
-    host_ip=$(ip --json route get 1 2>/dev/null | jq -r '.[0].prefsrc' 2>/dev/null || hostname -I | awk '{print $1}')
-    echo "    $(readlink -f "$0") send ${host_ip} --port ${port}"
-    podman run --rm "${netflag[@]}" -p "${port}:${port}/udp" "${image}" python3 -u - "${port}" <<'EOF'
+    probe=$(mktemp "${TMPDIR:-/tmp}/probe-XXXXXX.py")
+    cat > "${probe}" <<'EOF'
 import socket, struct, sys, subprocess
 IP_PKTINFO = 8  # linux; not exported by the socket module
 port = int(sys.argv[1])
@@ -71,6 +68,13 @@ print("received %r" % data.decode(errors="replace").strip())
 print("  source address: %s:%d" % src)
 print("  arrived on:     %s (ifindex %s), destination %s" % (socket.if_indextoname(ifindex) if ifindex else "?", ifindex, dst))
 EOF
+    cid=$(podman run -d --rm "${netflag[@]}" -p "${port}:${port}/udp" -v "${probe}:/probe.py:ro" "${image}" python3 -u /probe.py "${port}") || { rm -f "${probe}"; exit 1; }
+    sleep 2
+    echo "processes providing this container's network and port forwarding:"
+    pgrep -u "$(id -u)" -af 'rootlessport|slirp4netns|pasta|netavark|aardvark' | grep -v pgrep | cut -c1-160 | sed 's/^/    /' || echo "    (none found)"
+    echo "container output:"
+    podman logs -f "${cid}" 2>&1 | sed 's/^/    /'
+    rm -f "${probe}"
     ;;
 send)
     [[ -n "${target:-}" ]] || { echo "usage: $0 send <listener host IP> [--port N]" >&2; exit 1; }
