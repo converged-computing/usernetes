@@ -70,7 +70,7 @@ EOF
 cat > "${T}/bin/make" <<'EOF'
 #!/bin/bash
 echo "make $* CNI=${CNI:-unset} QUICK=${QUICK:-unset} STORAGE=${XDG_CONFIG_HOME:-unset} PWD=$PWD"
-[[ "$1" == "join-command" ]] && echo "kubeadm join stub" > join-command
+[[ "$1" == "join-command" ]] && printf 'echo "10.0.0.5  u7s-cp" >/etc/hosts.u7s\nkubeadm join stub\n' > join-command
 [[ "$1" == "kubeconfig" ]] && echo "stub kubeconfig" > kubeconfig
 [[ "$1" == "kubeadm-join" ]] && cat join-command
 exit 0
@@ -78,6 +78,7 @@ EOF
 printf '#!/bin/bash\necho "podman-compose $*"\n' > "${T}/bin/podman-compose"
 # buildah unshare <cmd> really runs <cmd>, so the TMPDIR cleanup between roles happens.
 printf '#!/bin/bash\nif [[ "$1" == unshare ]]; then shift; exec "$@"; fi\necho "buildah $*"\n' > "${T}/bin/buildah"
+printf '#!/bin/bash\n[[ -n "${CURL_STUB_FAIL:-}" ]] && exit 7; echo "{}"\n' > "${T}/bin/curl"
 chmod +x "${T}/bin/"*
 cp "${T}/bin/podman-compose" "${T}/home/.local/bin/"
 
@@ -215,11 +216,16 @@ check "control plane: source_env.sh written before builds" test "$(line_of 'Writ
 in_sandbox "timeout 20 bash '${T}/usernetes-start-worker.sh'" > "${T}/worker.log" 2>&1
 log="${T}/worker.log"
 check "worker: reaches idle"                  grep -q "Service will now idle indefinitely" "${log}"
+check "worker: checks the API server first"    grep -q "API server is reachable" "${log}"
 check "worker: joins with the shared join-command" grep -q "kubeadm join stub" "${log}"
-check "worker: make up-built gets CNI=calico" grep -q 'make up-built CNI=calico' "${log}"
+check "worker: make up-built gets QUICK=1 and CNI=calico" grep -q 'make up-built CNI=calico QUICK=1' "${log}"
 check "worker: source_env.sh written"         test -f "${T}/tmp/usernetes/source_env.sh"
 [[ "${verbose}" == "1" ]] && sed 's/^/    /' "${log}"
 
+in_sandbox CURL_STUB_FAIL=1 "timeout 20 bash '${T}/usernetes-start-worker.sh'" > "${T}/worker-noapi.log" 2>&1; rc=$?
+check "worker: unreachable API server fails before join" test "${rc}" != 0
+check "worker: unreachable API server names the address" grep -q "Nothing answers on 10.0.0.5:6443" "${T}/worker-noapi.log"
+check "worker: does not run kubeadm-join then"  not_grep "make kubeadm-join" "${T}/worker-noapi.log"
 rm -f "${T:?}/shared/join-command"
 in_sandbox "bash '${T}/usernetes-start-worker.sh'" > "${T}/worker-nojoin.log" 2>&1; rc=$?
 check "worker: missing join-command fails fast" test "${rc}" != 0
