@@ -15,7 +15,16 @@ For this to work, add each of the .service files to `~/.config/systemd/user` and
 Each physical node has its own rabbit (NNF) storage mounted at `/mnt/nnf/<uuid>-N`, and podman storage has to live there rather than in `$HOME`, which is shared across nodes. On start, each service:
 
 1. Looks under `/mnt/nnf` (override with `USERNETES_RABBIT_MOUNT`) and expects exactly one directory. Zero or more than one is an error. Set `USERNETES_STORAGE_ROOT` to skip discovery, for example on a node without a rabbit.
-2. Writes a per-node `storage.conf` onto the rabbit and points podman at it with `CONTAINERS_STORAGE_CONF`. Nothing in `~/.config/containers` is read or modified, so nodes cannot clobber each other.
+2. Writes a per-node `storage.conf` into a containers config directory on the rabbit and selects it with `XDG_CONFIG_HOME`. That is the same lookup podman uses for `~/.config/containers/storage.conf`, so the file behaves exactly like a hand-made one, and the shared `~/.config/containers` is never modified. Your other files there (containers.conf, registries.conf) are copied alongside so they stay in effect. The generated file has only the paths changed:
+
+   ```
+   [storage]
+     driver = "vfs"
+     runroot = "/mnt/nnf/<uuid>-0/usernetes/run-<uid>/containers"
+     graphroot = "/mnt/nnf/<uuid>-0/usernetes/config/containers/storage"
+   [storage.options.vfs]
+     ignore_chown_errors = "true"
+   ```
 3. Verifies with `podman info` that the graphroot really is on the rabbit before building any images.
 
 The layout under the rabbit is:
@@ -23,12 +32,36 @@ The layout under the rabbit is:
 ```
 /mnt/nnf/<uuid>-0/usernetes/
 ├── run-<uid>/containers/            # runroot
-└── config/containers/
-    ├── storage.conf                 # CONTAINERS_STORAGE_CONF
-    └── storage/                     # graphroot (images, layers, compose volumes)
+└── config/                          # XDG_CONFIG_HOME
+    └── containers/
+        ├── storage.conf             # generated
+        ├── containers.conf, ...     # copied from ~/.config/containers
+        └── storage/                 # graphroot (images, layers, compose volumes)
 ```
 
+If podman rejects the runroot as longer than 50 characters, set `USERNETES_RUNROOT_SYMLINK=1` and the runroot is referenced through a short symlink `/tmp/$USER/.nnf` that points at `<rabbit>/usernetes`; the data stays on the rabbit.
+
 The driver defaults to `vfs`; set `USERNETES_STORAGE_DRIVER=overlay` to try native rootless overlay.
+
+## Debugging and testing
+
+If a service fails at the "podman is not using the rabbit storage" check, run the debug script on that node. It does exactly what the service does (discover the rabbit, write storage.conf into the per-node config dir, export `XDG_CONFIG_HOME` and `XDG_RUNTIME_DIR`) and then drives podman through real operations with that config, checking after each that the data landed on the rabbit: `podman info` (config file, driver, graphroot, runroot), `podman images` (creates the libpod database on the rabbit), a volume, an imported image, and a `FROM scratch` build with the service's userns flags. None of those need a registry. When a step fails it prints diagnostics: whether podman's pause process and `podman unshare` can see the rabbit at all (a pause process created before the rabbit was mounted cannot, and `--migrate` replaces it), the podman debug log, which config and database files podman opens (strace), other storage.conf files that could be in play, the libpod database podman complained about, and a retry with explicit `--root`/`--runroot` flags.
+
+```bash
+/usr/workspace/usernetes/service/debug-storage.sh            # write config, exercise podman
+/usr/workspace/usernetes/service/debug-storage.sh --migrate  # podman system migrate first (replaces the pause process)
+/usr/workspace/usernetes/service/debug-storage.sh --fresh    # wipe the runtime dir first, like the service does
+/usr/workspace/usernetes/service/debug-storage.sh --pull     # also pull and run busybox
+/usr/workspace/usernetes/service/debug-storage.sh --keep     # leave the test image and volume on the rabbit
+/usr/workspace/usernetes/service/debug-storage.sh --reset    # podman system reset on the rabbit storage only
+```
+
+The shell logic can be tested anywhere without podman or a cluster. The test replaces podman, buildah, make, kubectl and podman-compose with stubs, creates a fake `/mnt/nnf` under a temp dir, and exercises discovery, storage.conf generation, the podman check, source_env.sh, both start scripts end to end, and the debug script.
+
+```bash
+./service/test-common.sh       # 67 checks
+./service/test-common.sh -v    # also print the captured service logs
+```
 
 ## Usage
 
@@ -65,7 +98,7 @@ systemctl --user status usernetes-worker
 
 ### Using the cluster (and podman) on a node
 
-Each service writes `/tmp/$USER/usernetes/source_env.sh` right after copying the template, so it exists while images are still building. It exports the runtime dir, `CNI`, and the rabbit-backed `CONTAINERS_STORAGE_CONF`; on the control plane it also sets `KUBECONFIG`. Source it in any shell where you want `podman`, `make`, or `kubectl` to see what the service sees.
+Each service writes `/tmp/$USER/usernetes/source_env.sh` right after copying the template, so it exists while images are still building. It exports the runtime dir, `CNI`, and the rabbit-backed `XDG_CONFIG_HOME`; on the control plane it also sets `KUBECONFIG`. Source it in any shell where you want `podman`, `make`, or `kubectl` to see what the service sees.
 
 ```bash
 cd /tmp/$USER/usernetes

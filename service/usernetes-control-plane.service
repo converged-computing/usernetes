@@ -11,6 +11,7 @@ LimitMEMLOCK=infinity
 # USERNETES_STORAGE_ROOT to bypass discovery, e.g. on a node without a rabbit.
 # Environment="USERNETES_STORAGE_ROOT=/tmp/%u/podman-storage"
 # Environment="USERNETES_STORAGE_DRIVER=vfs"
+# Environment="USERNETES_RUNROOT_SYMLINK=1"
 # Environment="USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-wip"
 
 # Standard output and error
