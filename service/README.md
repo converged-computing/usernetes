@@ -49,6 +49,16 @@ podman's rootless port forwarder runs inside the node container's network namesp
 
 ## Debugging and testing
 
+To show the delivery difference between port forwarders without any usernetes involved, `probe-port-forward.sh` runs a throwaway python container that prints the interface and source address of one forwarded UDP packet. Under rootlessport (podman 4.x, and podman 5 with slirp4netns) it arrives on `lo` from the container's own address; under pasta it arrives on `eth0` from the real remote host.
+
+```bash
+# node A
+/usr/workspace/usernetes/service/probe-port-forward.sh listen            # default bridge network, rootlessport
+/usr/workspace/usernetes/service/probe-port-forward.sh listen --pasta    # --network pasta (needs the pasta binary in PATH)
+# node B
+/usr/workspace/usernetes/service/probe-port-forward.sh send <host IP of A>
+```
+
 If both nodes are Ready and every pod is Running but pods on different nodes cannot reach each other, check Calico's addressing. Calico only autodetects its VXLAN endpoint when calico-node starts, so if `make install-cni` ran before `make sync-external-ip` covered a node, that node's calico-node keeps the unroutable podman bridge address. This replaces the `calicoctl patch node` step from the earlier test-calico branch.
 
 ```bash
