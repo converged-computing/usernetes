@@ -43,6 +43,10 @@ If podman rejects the runroot as longer than 50 characters, set `USERNETES_RUNRO
 
 The driver defaults to `vfs`; set `USERNETES_STORAGE_DRIVER=overlay` to try native rootless overlay.
 
+## Rootless podman and Calico VXLAN
+
+podman's rootless port forwarder runs inside the node container's network namespace and connects to the container's own IP, so VXLAN datagrams from other nodes arrive on `lo` with a local source address, not on `eth0`. The upstream entrypoint rewrites the source to Felix's sentinel address for `eth0` only, so Felix drops every cross-node packet as coming from a non-allowed host while every pod looks healthy. The services apply two fixups inside the node container right after `make up-built`: the same rewrite for `lo`, and `rp_filter=2` (a sentinel-sourced packet on `lo` fails strict reverse-path filtering). This replaces the sysctls from the earlier test-calico branch. `service/check-vxlan.sh` verifies it and `--fix` applies it to a running node.
+
 ## Debugging and testing
 
 If both nodes are Ready and every pod is Running but pods on different nodes cannot reach each other, check Calico's addressing. Calico only autodetects its VXLAN endpoint when calico-node starts, so if `make install-cni` ran before `make sync-external-ip` covered a node, that node's calico-node keeps the unroutable podman bridge address. This replaces the `calicoctl patch node` step from the earlier test-calico branch.

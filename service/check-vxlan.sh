@@ -71,12 +71,13 @@ if [[ "${fix}" == "1" ]]; then
     #    value is max(all, interface), so setting all covers vxlan.calico and any future device.
     in_node "for f in all default lo eth0 vxlan.calico; do [ -e /proc/sys/net/ipv4/conf/\$f/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/\$f/rp_filter; done; for f in all default lo eth0 vxlan.calico; do printf '%s=%s ' \$f \$(cat /proc/sys/net/ipv4/conf/\$f/rp_filter 2>/dev/null); done; echo" | show
     echo "  now watching Felix's counters for 10s (flux-sample retries constantly, so accept should start growing):"
-    before=$(in_node "iptables-save -c 2>/dev/null | grep -E 'dport ${port_calico}' | grep -iE 'accept|drop'" | grep -oE '\[[0-9]+:[0-9]+\]' | tr '\n' ' ')
+    felix_counters() { in_node "nft list chain ip filter cali-INPUT 2>/dev/null | grep 'dport ${port_calico}'" | grep -oE 'packets [0-9]+ bytes [0-9]+ (accept|drop)' | sed -E 's/packets ([0-9]+) bytes [0-9]+ (accept|drop)/\2=\1/' | tr '\n' ' '; }
+    before=$(felix_counters)
     sleep 10
-    after=$(in_node "iptables-save -c 2>/dev/null | grep -E 'dport ${port_calico}' | grep -iE 'accept|drop'" | grep -oE '\[[0-9]+:[0-9]+\]' | tr '\n' ' ')
-    echo "  [accept][drop] before: ${before}"
-    echo "  [accept][drop] after:  ${after}"
-    in_node "iptables-save -c 2>/dev/null | grep -E 'dport ${port_calico}' | grep -iE 'accept|drop'" | show
+    after=$(felix_counters)
+    echo "  Felix cali-INPUT VXLAN before: ${before}"
+    echo "  Felix cali-INPUT VXLAN after:  ${after}"
+    echo "  accept growing and drop flat means the fix works on this node."
     exit 0
 fi
 

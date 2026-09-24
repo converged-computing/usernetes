@@ -326,6 +326,37 @@ usernetes_cleanup_stale() {
     "${container_runtime_path}" volume rm usernetes_node-etc -f || log "      Volume 'usernetes_node-etc' not found."
 }
 
+# Fixups inside the node container for Calico VXLAN under rootless podman.
+# Call after `make up-built` (the entrypoint must have created its nft table).
+#
+# podman's rootless port forwarder runs inside the container's network
+# namespace and connects to the container's own IP, so VXLAN datagrams from
+# other nodes arrive on lo with a local source address. The upstream entrypoint
+# rewrites the source to Felix's sentinel address only for packets on eth0, so
+# Felix drops everything as coming from a non-allowed host. Extend the rewrite
+# to lo, and make rp_filter loose: a sentinel-sourced packet on lo fails strict
+# reverse-path filtering (the route to it is the default route via eth0).
+# The effective rp_filter is max(all, interface), so "all" covers vxlan.calico
+# once Calico creates it. Verify with service/check-vxlan.sh.
+usernetes_node_vxlan_fixups() {
+    if [[ "${CNI}" != "calico" ]]; then
+        return
+    fi
+    local compose port
+    compose=$(./Makefile.d/detect-container-engine.sh COMPOSE)
+    port="${PORT_CALICO:-4789}"
+    log "🩹 Applying rootless-podman VXLAN fixups inside the node container"
+    ${compose} exec -T node bash -c "
+        if ! nft list chain ip u7s-calico-vxlan prerouting 2>/dev/null | grep -q 'iifname \"lo\"'; then
+            nft add rule ip u7s-calico-vxlan prerouting iifname \"lo\" udp dport ${port} ip saddr set 169.254.7.115
+        fi
+        for f in all default lo eth0; do echo 2 > /proc/sys/net/ipv4/conf/\$f/rp_filter; done
+        echo \"rp_filter: all=\$(cat /proc/sys/net/ipv4/conf/all/rp_filter) lo=\$(cat /proc/sys/net/ipv4/conf/lo/rp_filter) eth0=\$(cat /proc/sys/net/ipv4/conf/eth0/rp_filter)\"
+        nft list chain ip u7s-calico-vxlan prerouting | grep 'ip saddr set'
+    " 2>&1 | grep -vE "^(podman-compose version|\['podman'|using podman version|podman exec |exit code: 0)" | sed 's/^/      /' \
+        || log "      WARNING: VXLAN fixups failed; cross-node pod traffic will not work. Run service/check-vxlan.sh --fix"
+}
+
 # Everything both roles do before the role-specific kubeadm steps.
 # Argument: control-plane or worker.
 usernetes_common_setup() {

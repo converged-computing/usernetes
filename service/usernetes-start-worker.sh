@@ -28,6 +28,7 @@ if ! QUICK=1 make up-built; then
     error_exit "Failed to bring up Usernetes with 'make up-built'."
 fi
 sleep 3
+usernetes_node_vxlan_fixups
 
 # Copy the join-command
 cp "${USERNETES_SHARED_DIR}/join-command" join-command
