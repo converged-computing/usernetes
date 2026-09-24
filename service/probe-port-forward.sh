@@ -41,22 +41,25 @@ listen)
         echo "A static build can be dropped into ~/.local/bin from https://passt.top/builds/latest/x86_64/" >&2
         exit 1
     fi
-    echo "podman $(podman --version | awk '{print $3}'), network mode: ${network:-default bridge (rootlessport)}, listening on UDP ${port} for 60s"
-    echo "send from the other node:  $(dirname "$0")/probe-port-forward.sh send $(hostname -I | awk '{print $1}') --port ${port}"
+    echo "podman $(podman --version | awk '{print $3}'), network mode: ${network:-default bridge (rootlessport)}"
+    podman image exists "${image}" || podman pull -q "${image}" || exit 1
     netflag=(); [[ -n "${network}" ]] && netflag=(--network "${network}")
-    podman run --rm "${netflag[@]}" -p "${port}:${port}/udp" "${image}" python3 - "${port}" <<'EOF'
+    echo "starting listener on UDP ${port}; wait for the READY line, then run on the other node:"
+    echo "    $(readlink -f "$0") send $(hostname -I | awk '{print $1}') --port ${port}"
+    podman run --rm "${netflag[@]}" -p "${port}:${port}/udp" "${image}" python3 -u - "${port}" <<'EOF'
 import socket, struct, sys, subprocess
 IP_PKTINFO = 8  # linux; not exported by the socket module
 port = int(sys.argv[1])
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.setsockopt(socket.IPPROTO_IP, IP_PKTINFO, 1)
-s.bind(("", port)); s.settimeout(60)
+s.bind(("", port)); s.settimeout(120)
 print("container addresses:")
 print(subprocess.run(["sh", "-c", "ip -4 -o addr | awk '{print \"  \"$2\" \"$4}'"], capture_output=True, text=True).stdout, end="")
+print("READY: waiting up to 120s for a packet on UDP %d" % port, flush=True)
 try:
     data, anc, _, src = s.recvmsg(200, 1024)
 except socket.timeout:
-    print("no packet within 60s"); sys.exit(1)
+    print("no packet within 120s"); sys.exit(1)
 ifindex = None
 for level, typ, cmsg in anc:
     if level == socket.IPPROTO_IP and typ == IP_PKTINFO:
