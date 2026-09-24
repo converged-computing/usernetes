@@ -45,6 +45,14 @@ The driver defaults to `vfs`; set `USERNETES_STORAGE_DRIVER=overlay` to try nati
 
 ## Debugging and testing
 
+If both nodes are Ready and every pod is Running but pods on different nodes cannot reach each other, check Calico's addressing. Calico only autodetects its VXLAN endpoint when calico-node starts, so if `make install-cni` ran before `make sync-external-ip` covered a node, that node's calico-node keeps the unroutable podman bridge address. This replaces the `calicoctl patch node` step from the earlier test-calico branch.
+
+```bash
+cd /tmp/$USER/usernetes && . source_env.sh
+/usr/workspace/usernetes/service/check-calico.sh                # report host IP vs. what Calico detected, per node
+/usr/workspace/usernetes/service/check-calico.sh --fix            # sync-external-ip, restart calico-node where wrong, re-check
+```
+
 If a service fails at the "podman is not using the rabbit storage" check, run the debug script on that node. It does exactly what the service does (discover the rabbit, write storage.conf into the per-node config dir, export `XDG_CONFIG_HOME` and `XDG_RUNTIME_DIR`) and then drives podman through real operations with that config, checking after each that the data landed on the rabbit: `podman info` (config file, driver, graphroot, runroot), `podman images` (creates the libpod database on the rabbit), a volume, an imported image, and a `FROM scratch` build with the service's userns flags. None of those need a registry. When a step fails it prints diagnostics: whether podman's pause process and `podman unshare` can see the rabbit at all (a pause process created before the rabbit was mounted cannot, and `--migrate` replaces it), the podman debug log, which config and database files podman opens (strace), other storage.conf files that could be in play, the libpod database podman complained about, and a retry with explicit `--root`/`--runroot` flags.
 
 ```bash
