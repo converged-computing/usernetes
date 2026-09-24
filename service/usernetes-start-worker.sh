@@ -56,6 +56,9 @@ if ! make kubeadm-join; then
     error_exit "Failed 'make kubeadm-join'."
 fi
 
+# Re-apply now that the node has fully booted (see usernetes_node_vxlan_fixups).
+usernetes_node_vxlan_fixups
+
 log "🎉 Usernetes worker node setup complete."
 log "    To use podman against this node's storage: source ${TMPDIR}/usernetes/source_env.sh"
 log "🚀 Service will now idle indefinitely. Process ID: $$"

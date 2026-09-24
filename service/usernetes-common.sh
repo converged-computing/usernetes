@@ -327,7 +327,10 @@ usernetes_cleanup_stale() {
 }
 
 # Fixups inside the node container for Calico VXLAN under rootless podman.
-# Call after `make up-built` (the entrypoint must have created its nft table).
+# Call after `make up-built` (the entrypoint must have created its nft table)
+# and again after kubeadm init/join: something in the node resets rp_filter to
+# strict after the entrypoint, so it is set live, persisted in sysctl.d for
+# systemd-sysctl, and re-applied once the node has fully booted. Idempotent.
 #
 # podman's rootless port forwarder runs inside the container's network
 # namespace and connects to the container's own IP, so VXLAN datagrams from
@@ -350,7 +353,8 @@ usernetes_node_vxlan_fixups() {
         if ! nft list chain ip u7s-calico-vxlan prerouting 2>/dev/null | grep -q 'iifname \"lo\"'; then
             nft add rule ip u7s-calico-vxlan prerouting iifname \"lo\" udp dport ${port} ip saddr set 169.254.7.115
         fi
-        for f in all default lo eth0; do echo 2 > /proc/sys/net/ipv4/conf/\$f/rp_filter; done
+        for f in all default lo eth0 vxlan.calico; do [ -e /proc/sys/net/ipv4/conf/\$f/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/\$f/rp_filter; done
+        printf 'net.ipv4.conf.all.rp_filter = 2\\nnet.ipv4.conf.default.rp_filter = 2\\n' > /etc/sysctl.d/99-usernetes.conf
         echo \"rp_filter: all=\$(cat /proc/sys/net/ipv4/conf/all/rp_filter) lo=\$(cat /proc/sys/net/ipv4/conf/lo/rp_filter) eth0=\$(cat /proc/sys/net/ipv4/conf/eth0/rp_filter)\"
         nft list chain ip u7s-calico-vxlan prerouting | grep 'ip saddr set'
     " 2>&1 | grep -vE "^(podman-compose version|\['podman'|using podman version|podman exec |exit code: 0)" | sed 's/^/      /' \
