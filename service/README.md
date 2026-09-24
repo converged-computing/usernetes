@@ -53,6 +53,16 @@ cd /tmp/$USER/usernetes && . source_env.sh
 /usr/workspace/usernetes/service/check-calico.sh --fix            # sync-external-ip, restart calico-node where wrong, re-check
 ```
 
+If Calico addressing is right but pods on different nodes still cannot reach each other, inspect the VXLAN path itself from inside each node container: the vxlan.calico device, routes and fdb entries to the peer, checksum offload, rp_filter, the stateless NAT from the entrypoint, Felix's accept/drop counters, and packet counters on port 4789 that show whether encapsulated packets leave this node and arrive at the other. The `--listen`/`--peer` pair sends plain UDP between the two hosts over the published flannel port, which tests rootless UDP forwarding without Calico involved.
+
+```bash
+# on node A (with source_env.sh sourced in /tmp/$USER/usernetes)
+/usr/workspace/usernetes/service/check-vxlan.sh --listen
+# on node B, within 20 seconds
+/usr/workspace/usernetes/service/check-vxlan.sh --peer <host IP of A> --pod <IP of a pod on A>
+# then swap roles
+```
+
 If a service fails at the "podman is not using the rabbit storage" check, run the debug script on that node. It does exactly what the service does (discover the rabbit, write storage.conf into the per-node config dir, export `XDG_CONFIG_HOME` and `XDG_RUNTIME_DIR`) and then drives podman through real operations with that config, checking after each that the data landed on the rabbit: `podman info` (config file, driver, graphroot, runroot), `podman images` (creates the libpod database on the rabbit), a volume, an imported image, and a `FROM scratch` build with the service's userns flags. None of those need a registry. When a step fails it prints diagnostics: whether podman's pause process and `podman unshare` can see the rabbit at all (a pause process created before the rabbit was mounted cannot, and `--migrate` replaces it), the podman debug log, which config and database files podman opens (strace), other storage.conf files that could be in play, the libpod database podman complained about, and a retry with explicit `--root`/`--runroot` flags.
 
 ```bash
