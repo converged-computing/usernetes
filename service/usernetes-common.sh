@@ -21,6 +21,9 @@
 #   USERNETES_STORAGE_DRIVER   containers/storage driver written to storage.conf
 #                              (default: vfs).
 #   USERNETES_RUNROOT          podman runroot (default: <rabbit>/usernetes/run-<uid>/containers).
+#   USERNETES_PASTA_URL        Where to fetch a static pasta binary when none is in
+#                              PATH (default: https://passt.top/builds/latest/x86_64/pasta).
+#                              Installed into ~/.local/bin like kubectl.
 #   USERNETES_PASTA_MTU        MTU for the node's eth0 under pasta (default: the MTU
 #                              of the host's default-route interface, so VXLAN does
 #                              not fragment).
@@ -50,6 +53,7 @@ export USERNETES_SHARED_DIR="${USERNETES_SHARED_DIR:-/usr/workspace/usernetes}"
 export USERNETES_CNI="${USERNETES_CNI:-calico}"
 export USERNETES_RABBIT_MOUNT="${USERNETES_RABBIT_MOUNT:-/mnt/nnf}"
 export USERNETES_STORAGE_DRIVER="${USERNETES_STORAGE_DRIVER:-vfs}"
+export USERNETES_PASTA_URL="${USERNETES_PASTA_URL:-https://passt.top/builds/latest/x86_64/pasta}"
 
 # The Makefile reads CNI; keep it consistent for every make call in the services.
 export CNI="${USERNETES_CNI}"
@@ -117,13 +121,31 @@ usernetes_check_engine() {
         local compose_path
         compose_path=$(command -v podman-compose) || error_exit "podman-compose not found in PATH (expected in ${LOCAL_BIN_DIR})."
         log "    Found podman-compose at ${compose_path}"
-        # This branch runs the node with --network pasta. podman 4.x looks the binary
-        # up in PATH; a static build from https://passt.top/builds/latest/x86_64/
-        # dropped into ${LOCAL_BIN_DIR} is enough.
-        local pasta_path
-        pasta_path=$(command -v pasta) || error_exit "pasta not found in PATH. Put a pasta binary in ${LOCAL_BIN_DIR} (static builds: https://passt.top/builds/latest/x86_64/)."
-        log "    Found pasta at ${pasta_path} ($("${pasta_path}" --version 2>&1 | head -1))"
     fi
+}
+
+# This branch runs the node with --network pasta. podman 4.x looks the binary up
+# in PATH, so a static build in ~/.local/bin is enough; fetch one if missing,
+# the same way kubectl is installed. The download is verified by running it.
+usernetes_install_pasta() {
+    log "    🍝 Looking for pasta"
+    if ! command -v pasta > /dev/null; then
+        log "      Installing pasta from ${USERNETES_PASTA_URL}..."
+        local tmp="${LOCAL_BIN_DIR}/.pasta.download"
+        if ! curl -sSfL "${USERNETES_PASTA_URL}" -o "${tmp}"; then
+            rm -f "${tmp}"
+            error_exit "Could not download pasta from ${USERNETES_PASTA_URL}. Set USERNETES_PASTA_URL, or put a pasta binary in ${LOCAL_BIN_DIR} (static builds: https://passt.top/builds/latest/x86_64/)."
+        fi
+        chmod +x "${tmp}"
+        if ! "${tmp}" --version > /dev/null 2>&1; then
+            rm -f "${tmp}"
+            error_exit "Downloaded file from ${USERNETES_PASTA_URL} does not run as pasta (blocked download or wrong architecture?). Put a working pasta binary in ${LOCAL_BIN_DIR}."
+        fi
+        mv "${tmp}" "${LOCAL_BIN_DIR}/pasta"
+        log "      pasta installed to ${LOCAL_BIN_DIR}/pasta"
+    fi
+    command -v pasta > /dev/null || error_exit "pasta not found after installation attempt."
+    log "      pasta found at $(command -v pasta) ($(pasta --version 2>&1 | head -1))"
 }
 
 # Find the rabbit storage for this node. Each physical node has its own
@@ -409,6 +431,7 @@ usernetes_common_setup() {
 
     usernetes_check_engine
     usernetes_install_kubectl
+    usernetes_install_pasta
 
     log "🦋 Setting up Environment for Usernetes"
     usernetes_reset_runtime_dir

@@ -81,7 +81,16 @@ EOF
 printf '#!/bin/bash\necho "podman-compose $*"\n' > "${T}/bin/podman-compose"
 # buildah unshare <cmd> really runs <cmd>, so the TMPDIR cleanup between roles happens.
 printf '#!/bin/bash\nif [[ "$1" == unshare ]]; then shift; exec "$@"; fi\necho "buildah $*"\n' > "${T}/bin/buildah"
-printf '#!/bin/bash\n[[ -n "${CURL_STUB_FAIL:-}" ]] && exit 7; echo "{}"\n' > "${T}/bin/curl"
+cat > "${T}/bin/curl" <<'EOF'
+#!/bin/bash
+[[ -n "${CURL_STUB_FAIL:-}" ]] && exit 7
+out=""; while [[ $# -gt 0 ]]; do [[ "$1" == -o ]] && out="$2"; shift; done
+if [[ -n "${out}" ]]; then
+    if [[ -n "${CURL_STUB_HTML:-}" ]]; then echo "<html>blocked</html>" > "${out}"; else printf '#!/bin/bash\necho "pasta 2026_09_01.downloaded"\n' > "${out}"; fi
+else
+    echo "{}"
+fi
+EOF
 printf '#!/bin/bash\necho "pasta 2026_09_01.stub"\n' > "${T}/bin/pasta"
 cat > "${T}/bin/ip" <<'EOF'
 #!/bin/bash
@@ -220,13 +229,27 @@ rm -rf "${T:?}/tmp"
 # Line number of the first match of a pattern in a file (0 if none).
 line_of() { grep -n -m1 "$1" "$2" | cut -d: -f1 || echo 0; }
 
-echo "== pasta binary required"
+echo "== pasta installed like kubectl"
 mv "${T}/bin/pasta" "${T}/bin/pasta.off"
-in_sandbox "bash '${T}/usernetes-start-control-plane.sh'" > "${T}/nopasta.log" 2>&1; rc=$?
-check "missing pasta is an error"             test "${rc}" != 0
-check "missing pasta names where to put it"   grep -q 'pasta not found in PATH' "${T}/nopasta.log"
-check "missing pasta fails before any build"  not_grep 'usernetes_base' "${T}/nopasta.log"
+in_sandbox "timeout 20 bash '${T}/usernetes-start-control-plane.sh'" > "${T}/pasta-install.log" 2>&1
+check "missing pasta is downloaded"           grep -q 'Installing pasta from https://passt.top/builds/latest/x86_64/pasta' "${T}/pasta-install.log"
+check "pasta lands in ~/.local/bin"           test -x "${T}/home/.local/bin/pasta"
+check "downloaded pasta is used"              grep -q 'pasta found at .*/.local/bin/pasta (pasta 2026_09_01.downloaded)' "${T}/pasta-install.log"
+check "node still starts after the install"   grep -q 'Starting the node container with pasta:' "${T}/pasta-install.log"
+rm -f "${T:?}/home/.local/bin/pasta" "${T:?}/shared/join-command"
+in_sandbox CURL_STUB_FAIL=1 "bash '${T}/usernetes-start-control-plane.sh'" > "${T}/pasta-dlfail.log" 2>&1; rc=$?
+check "failed download is an error"           test "${rc}" != 0
+check "failed download names the URL and fallback" grep -q 'Could not download pasta from .*Set USERNETES_PASTA_URL' "${T}/pasta-dlfail.log"
+in_sandbox CURL_STUB_HTML=1 "bash '${T}/usernetes-start-control-plane.sh'" > "${T}/pasta-html.log" 2>&1; rc=$?
+check "non-binary download is an error"       test "${rc}" != 0
+check "non-binary download is removed"        test ! -e "${T}/home/.local/bin/pasta" -a ! -e "${T}/home/.local/bin/.pasta.download"
+in_sandbox USERNETES_PASTA_URL=https://example.invalid/pasta "timeout 20 bash '${T}/usernetes-start-control-plane.sh'" > "${T}/pasta-url.log" 2>&1
+check "USERNETES_PASTA_URL is honoured"       grep -q 'Installing pasta from https://example.invalid/pasta' "${T}/pasta-url.log"
+rm -f "${T:?}/home/.local/bin/pasta" "${T:?}/shared/join-command"
 mv "${T}/bin/pasta.off" "${T}/bin/pasta"
+in_sandbox "timeout 20 bash '${T}/usernetes-start-control-plane.sh'" > /dev/null 2>&1
+check "existing pasta in PATH is not re-downloaded" test ! -e "${T}/home/.local/bin/pasta"
+rm -f "${T:?}/shared/join-command"
 
 echo "== end to end (stubbed)"
 in_sandbox "timeout 20 bash '${T}/usernetes-start-control-plane.sh'" > "${T}/control-plane.log" 2>&1

@@ -49,7 +49,7 @@ This branch tests the upstream Calico design as-is under pasta. Podman 4.x canno
 
 The pasta options mirror the upstream README's Podman v6 recipe: a dedicated address `NODE_IP` on `NODE_SUBNET` with gateway `.1` rather than a copy of the host's address, interface name `eth0`, and the MTU of the host's default-route interface (`USERNETES_PASTA_MTU` overrides it).
 
-pasta is not installed on hetchy. podman 4.x looks it up in `PATH`, so a static build from https://passt.top/builds/latest/x86_64/ in `~/.local/bin` is enough; the service refuses to start without it.
+pasta is not installed on hetchy. podman 4.x looks it up in `PATH`, so the services install a static build into `~/.local/bin` the same way they install kubectl, from https://passt.top/builds/latest/x86_64/pasta (`USERNETES_PASTA_URL` overrides the location), and verify it runs before using it. A binary already in `PATH` is used as is.
 
 To confirm the delivery path once the cluster is up, `check-vxlan.sh` on either node should show `in-iif-eth0` growing and `in-iif-lo` at zero, and Felix's accept counter climbing.
 
