@@ -167,6 +167,7 @@ Name                  | Type    | Default value
 `PORT_FLANNEL`        | Integer | 8472
 `PORT_CALICO`         | Integer | 4789
 `PORT_CALICO_TYPHA`   | Integer | 5473 (host port only; the container port is fixed)
+`CALICO_VXLAN_IIFNAME`| String  | "eth0" (interface on which forwarded VXLAN packets arrive in the node; "lo" for Podman's rootlessport, i.e., Podman v4 and v5 with slirp4netns; has to be set on `make up`)
 `PORT_KUBE_APISERVER` | Integer | 6443
 `POD_SUBNET`          | String  | "10.244.0.0/16"
 `SERVICE_SUBNET`      | String  | "10.96.0.0/16"

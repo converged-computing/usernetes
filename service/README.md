@@ -45,7 +45,9 @@ The driver defaults to `vfs`; set `USERNETES_STORAGE_DRIVER=overlay` to try nati
 
 ## Rootless podman and Calico VXLAN
 
-podman's rootless port forwarder runs inside the node container's network namespace and connects to the container's own IP, so VXLAN datagrams from other nodes arrive on `lo` with a local source address, not on `eth0`. The upstream entrypoint rewrites the source to Felix's sentinel address for `eth0` only, so Felix drops every cross-node packet as coming from a non-allowed host while every pod looks healthy. The services apply two fixups inside the node container right after `make up-built`: the same rewrite for `lo`, and `rp_filter=2` (a sentinel-sourced packet on `lo` fails strict reverse-path filtering). This replaces the sysctls from the earlier test-calico branch. `service/check-vxlan.sh` verifies it and `--fix` applies it to a running node.
+podman's rootless port forwarder (rootlessport) runs inside the node container's network namespace and connects to the container's own IP, so VXLAN datagrams from other nodes arrive on `lo`, not `eth0`. The entrypoint's rewrite of the source to Felix's sentinel address matches one interface, `CALICO_VXLAN_IIFNAME`, which defaults to `eth0` (right for RootlessKit and pasta). The services export `CALICO_VXLAN_IIFNAME=lo` so `make up-built` passes it into the node, and source_env.sh exports it for a manual `make up`. This is the change proposed upstream in [issue 412](https://github.com/rootless-containers/usernetes/issues/412).
+
+A sentinel-sourced packet on `lo` fails strict reverse-path filtering, so rp_filter must be loose. The entrypoint sets that at boot, but on hetchy it was back at 1 by the time Calico ran, so the services re-apply it after `make up-built` and again after kubeadm, persist it in sysctl.d inside the node, and log the values found before re-applying so the reset is visible in the log. `service/check-vxlan.sh` verifies the whole path.
 
 ## Debugging and testing
 

@@ -56,7 +56,7 @@ if ! make kubeadm-join; then
     error_exit "Failed 'make kubeadm-join'."
 fi
 
-# Re-apply now that the node has fully booted (see usernetes_node_vxlan_fixups).
+# Re-apply now that the node has fully booted (see usernetes_node_vxlan_fixups): logs whether rp_filter was reset.
 usernetes_node_vxlan_fixups
 
 log "🎉 Usernetes worker node setup complete."

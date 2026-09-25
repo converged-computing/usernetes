@@ -13,6 +13,9 @@
 #   USERNETES_SHARED_DIR       Shared filesystem where the control plane leaves
 #                              the join-command for workers (default: /usr/workspace/usernetes).
 #   USERNETES_CNI              CNI passed to make (default: calico).
+#   CALICO_VXLAN_IIFNAME       Interface the node's entrypoint matches for inbound
+#                              Calico VXLAN packets (default here: lo, for Podman's
+#                              rootlessport; upstream default is eth0).
 #   USERNETES_RABBIT_MOUNT     Where rabbit (NNF) storage is mounted on each node
 #                              (default: /mnt/nnf). Exactly one <uuid>-N directory
 #                              is expected under it during an allocation.
@@ -50,6 +53,10 @@ export USERNETES_STORAGE_DRIVER="${USERNETES_STORAGE_DRIVER:-vfs}"
 
 # The Makefile reads CNI; keep it consistent for every make call in the services.
 export CNI="${USERNETES_CNI}"
+# Podman 4.x forwards published ports with rootlessport, which delivers into the
+# node container on lo, so the entrypoint's Calico VXLAN source rewrite must
+# match lo instead of eth0 (docker-compose.yaml passes this into the node).
+export CALICO_VXLAN_IIFNAME="${CALICO_VXLAN_IIFNAME:-lo}"
 
 # Podman build flags. Our subuid range is small, so map what we have.
 USERNETES_BUILD_ARGS=(--userns-uid-map=0:0:1 --userns-uid-map=1:1:1999 --userns-uid-map=65534:2000:2)
@@ -289,6 +296,7 @@ export PATH="\${HOME}/.local/bin:\${PATH}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR}"
 export CONTAINER_ENGINE="${CONTAINER_ENGINE}"
 export CNI="${CNI}"
+export CALICO_VXLAN_IIFNAME="${CALICO_VXLAN_IIFNAME}"
 EOF
     if [[ -n "${USERNETES_STORAGE_ROOT:-}" ]]; then
         cat <<EOF >> "${target}"
@@ -326,21 +334,17 @@ usernetes_cleanup_stale() {
     "${container_runtime_path}" volume rm usernetes_node-etc -f || log "      Volume 'usernetes_node-etc' not found."
 }
 
-# Fixups inside the node container for Calico VXLAN under rootless podman.
-# Call after `make up-built` (the entrypoint must have created its nft table)
-# and again after kubeadm init/join: something in the node resets rp_filter to
-# strict after the entrypoint, so it is set live, persisted in sysctl.d for
-# systemd-sysctl, and re-applied once the node has fully booted. Idempotent.
+# rp_filter fixup inside the node container. Call after `make up-built` and
+# again after kubeadm init/join, and it is idempotent.
 #
-# podman's rootless port forwarder runs inside the container's network
-# namespace and connects to the container's own IP, so VXLAN datagrams from
-# other nodes arrive on lo with a local source address. The upstream entrypoint
-# rewrites the source to Felix's sentinel address only for packets on eth0, so
-# Felix drops everything as coming from a non-allowed host. Extend the rewrite
-# to lo, and make rp_filter loose: a sentinel-sourced packet on lo fails strict
-# reverse-path filtering (the route to it is the default route via eth0).
-# The effective rp_filter is max(all, interface), so "all" covers vxlan.calico
-# once Calico creates it. Verify with service/check-vxlan.sh.
+# With CALICO_VXLAN_IIFNAME=lo the entrypoint rewrites the source of inbound
+# VXLAN packets on lo to Felix's sentinel address 169.254.7.115. Such a packet
+# fails strict reverse-path filtering (its only route is the default via eth0),
+# so rp_filter has to be loose. The entrypoint sets that at boot, but on hetchy
+# it was back at 1 by the time Calico ran, so set it live, persist it in
+# sysctl.d for systemd-sysctl, and log the values found before re-applying so
+# the reset can be seen. The effective rp_filter is max(all, interface), so
+# "all" covers vxlan.calico once Calico creates it.
 usernetes_node_vxlan_fixups() {
     if [[ "${CNI}" != "calico" ]]; then
         return
@@ -348,17 +352,15 @@ usernetes_node_vxlan_fixups() {
     local compose port
     compose=$(./Makefile.d/detect-container-engine.sh COMPOSE)
     port="${PORT_CALICO:-4789}"
-    log "🩹 Applying rootless-podman VXLAN fixups inside the node container"
+    log "🩹 Applying rp_filter fixup inside the node container"
     ${compose} exec -T node bash -c "
-        if ! nft list chain ip u7s-calico-vxlan prerouting 2>/dev/null | grep -q 'iifname \"lo\"'; then
-            nft add rule ip u7s-calico-vxlan prerouting iifname \"lo\" udp dport ${port} ip saddr set 169.254.7.115
-        fi
+        echo \"rp_filter before: all=\$(cat /proc/sys/net/ipv4/conf/all/rp_filter) default=\$(cat /proc/sys/net/ipv4/conf/default/rp_filter) lo=\$(cat /proc/sys/net/ipv4/conf/lo/rp_filter) eth0=\$(cat /proc/sys/net/ipv4/conf/eth0/rp_filter)\"
         for f in all default lo eth0 vxlan.calico; do [ -e /proc/sys/net/ipv4/conf/\$f/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/\$f/rp_filter; done
         printf 'net.ipv4.conf.all.rp_filter = 2\\nnet.ipv4.conf.default.rp_filter = 2\\n' > /etc/sysctl.d/99-usernetes.conf
-        echo \"rp_filter: all=\$(cat /proc/sys/net/ipv4/conf/all/rp_filter) lo=\$(cat /proc/sys/net/ipv4/conf/lo/rp_filter) eth0=\$(cat /proc/sys/net/ipv4/conf/eth0/rp_filter)\"
-        nft list chain ip u7s-calico-vxlan prerouting | grep 'ip saddr set'
+        echo \"rp_filter after:  all=\$(cat /proc/sys/net/ipv4/conf/all/rp_filter) default=\$(cat /proc/sys/net/ipv4/conf/default/rp_filter) lo=\$(cat /proc/sys/net/ipv4/conf/lo/rp_filter) eth0=\$(cat /proc/sys/net/ipv4/conf/eth0/rp_filter)\"
+        echo \"entrypoint prerouting rule: \$(nft list chain ip u7s-calico-vxlan prerouting | grep 'ip saddr set' | sed 's/^ *//')\"
     " 2>&1 | grep -vE "^(podman-compose version|\['podman'|using podman version|podman exec |exit code: 0)" | sed 's/^/      /' \
-        || log "      WARNING: VXLAN fixups failed; cross-node pod traffic will not work. Run service/check-vxlan.sh --fix"
+        || log "      WARNING: rp_filter fixup failed; cross-node pod traffic may not work. Run service/check-vxlan.sh"
 }
 
 # Everything both roles do before the role-specific kubeadm steps.

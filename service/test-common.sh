@@ -69,7 +69,7 @@ esac
 EOF
 cat > "${T}/bin/make" <<'EOF'
 #!/bin/bash
-echo "make $* CNI=${CNI:-unset} QUICK=${QUICK:-unset} STORAGE=${XDG_CONFIG_HOME:-unset} PWD=$PWD"
+echo "make $* CNI=${CNI:-unset} QUICK=${QUICK:-unset} IIF=${CALICO_VXLAN_IIFNAME:-unset} STORAGE=${XDG_CONFIG_HOME:-unset} PWD=$PWD"
 [[ "$1" == "join-command" ]] && printf 'echo "10.0.0.5  u7s-cp" >/etc/hosts.u7s\nkubeadm join stub\n' > join-command
 [[ "$1" == "kubeconfig" ]] && echo "stub kubeconfig" > kubeconfig
 [[ "$1" == "kubeadm-join" ]] && cat join-command
@@ -191,6 +191,7 @@ check "unsets CONTAINERS_STORAGE_CONF"        grep -q '^unset CONTAINERS_STORAGE
 check "exports USERNETES_STORAGE_ROOT"        grep -q '^export USERNETES_STORAGE_ROOT=' <<<"${out}"
 check "exports XDG_RUNTIME_DIR"               grep -q "^export XDG_RUNTIME_DIR=\"${T}/xdg\"$" <<<"${out}"
 check "exports CNI=calico"                    grep -q '^export CNI="calico"$' <<<"${out}"
+check "exports CALICO_VXLAN_IIFNAME=lo"        grep -q '^export CALICO_VXLAN_IIFNAME="lo"$' <<<"${out}"
 check "control plane sets KUBECONFIG"         grep -q '^export KUBECONFIG=' <<<"${out}"
 check "PATH is expanded at source time"       grep -q '^export PATH="${HOME}/.local/bin:${PATH}"$' <<<"${out}"
 out=$(fn CONTAINER_ENGINE=podman TMPDIR="${T}/tmp" 'usernetes_setup_podman_storage; usernetes_write_source_env worker; cat "$TMPDIR/usernetes/source_env.sh"' 2>&1)
@@ -206,14 +207,18 @@ log="${T}/control-plane.log"
 check "control plane: reaches idle"           grep -q "Service will now idle indefinitely" "${log}"
 check "control plane: storage verified before builds" test "$(line_of 'podman graphroot' "${log}")" -lt "$(line_of 'usernetes_base' "${log}")"
 check "control plane: make up-built gets QUICK=1 and CNI=calico" grep -q 'make up-built CNI=calico QUICK=1' "${log}"
+check "control plane: make up-built gets CALICO_VXLAN_IIFNAME=lo" grep -q 'make up-built CNI=calico QUICK=1 IIF=lo' "${log}"
+check "control plane: no hand-added nft rule"   not_grep 'nft add rule' "${log}"
+check "control plane: entrypoint rule is inspected" grep -q 'entrypoint prerouting rule' "${log}"
+check "control plane: rp_filter values logged before re-applying" grep -q 'rp_filter before' "${log}"
 check "control plane: make sees XDG_CONFIG_HOME" grep -q "make kubeadm-init .*STORAGE=${rabbit}/usernetes/config" "${log}"
 check "control plane: runs from the copied checkout" grep -q "make kubeadm-init .*PWD=${T}/tmp/usernetes" "${log}"
 check "control plane: join-command published"  test -f "${T}/shared/join-command"
-check "control plane: VXLAN fixups applied after up" grep -q "Applying rootless-podman VXLAN fixups" "${log}"
+check "control plane: rp_filter fixup applied after up" grep -q "Applying rp_filter fixup" "${log}"
 check "control plane: fixups run inside the node" grep -q "podman-compose exec -T node bash -c" "${log}"
-check "control plane: fixups after up-built"    test "$(line_of 'make up-built' "${log}")" -lt "$(line_of 'VXLAN fixups' "${log}")"
-check "control plane: fixups applied twice"     test "$(grep -c 'Applying rootless-podman VXLAN fixups' "${log}")" == 2
-check "control plane: second fixup after kubeadm-init" test "$(line_of 'make kubeadm-init' "${log}")" -lt "$(grep -n 'VXLAN fixups' "${log}" | tail -1 | cut -d: -f1)"
+check "control plane: fixup after up-built"     test "$(line_of 'make up-built' "${log}")" -lt "$(line_of 'rp_filter fixup' "${log}")"
+check "control plane: fixup applied twice"      test "$(grep -c 'Applying rp_filter fixup' "${log}")" == 2
+check "control plane: second fixup after kubeadm-init" test "$(line_of 'make kubeadm-init' "${log}")" -lt "$(grep -n 'rp_filter fixup' "${log}" | tail -1 | cut -d: -f1)"
 check "control plane: fixups persist rp_filter"  grep -q '99-usernetes.conf' "${log}"
 check "control plane: source_env.sh survives cleanup" test -f "${T}/tmp/usernetes/source_env.sh"
 check "control plane: source_env.sh written before builds" test "$(line_of 'Writing .*source_env.sh' "${log}")" -lt "$(line_of 'usernetes_base' "${log}")"
@@ -224,8 +229,9 @@ log="${T}/worker.log"
 check "worker: reaches idle"                  grep -q "Service will now idle indefinitely" "${log}"
 check "worker: checks the API server first"    grep -q "API server is reachable" "${log}"
 check "worker: joins with the shared join-command" grep -q "kubeadm join stub" "${log}"
-check "worker: VXLAN fixups applied twice"    test "$(grep -c 'Applying rootless-podman VXLAN fixups' "${log}")" == 2
-check "worker: second fixup after kubeadm-join" test "$(line_of 'make kubeadm-join' "${log}")" -lt "$(grep -n 'VXLAN fixups' "${log}" | tail -1 | cut -d: -f1)"
+check "worker: make up-built gets CALICO_VXLAN_IIFNAME=lo" grep -q 'make up-built CNI=calico QUICK=1 IIF=lo' "${log}"
+check "worker: rp_filter fixup applied twice"  test "$(grep -c 'Applying rp_filter fixup' "${log}")" == 2
+check "worker: second fixup after kubeadm-join" test "$(line_of 'make kubeadm-join' "${log}")" -lt "$(grep -n 'rp_filter fixup' "${log}" | tail -1 | cut -d: -f1)"
 check "worker: make up-built gets QUICK=1 and CNI=calico" grep -q 'make up-built CNI=calico QUICK=1' "${log}"
 check "worker: source_env.sh written"         test -f "${T}/tmp/usernetes/source_env.sh"
 [[ "${verbose}" == "1" ]] && sed 's/^/    /' "${log}"
@@ -238,6 +244,16 @@ rm -f "${T:?}/shared/join-command"
 in_sandbox "bash '${T}/usernetes-start-worker.sh'" > "${T}/worker-nojoin.log" 2>&1; rc=$?
 check "worker: missing join-command fails fast" test "${rc}" != 0
 check "worker: missing join-command fails before storage setup" not_grep 'Writing .*storage.conf' "${T}/worker-nojoin.log"
+
+echo "== entrypoint honours CALICO_VXLAN_IIFNAME"
+# Render the nft rule line the way the entrypoint's unquoted heredoc does.
+rule_line=$(sed -n '/^table ip u7s-calico-vxlan/,/^EOF/p' "${here}/../Dockerfile.d/u7s-entrypoint.sh" | grep iifname)
+render_rule() { env -u CALICO_VXLAN_IIFNAME "$@" PORT_CALICO=4789 bash -c "cat <<EOF
+${rule_line}
+EOF"; }
+check "entrypoint default interface is eth0"  grep -q 'iifname "eth0" udp dport 4789 ip saddr set 169.254.7.115' <<<"$(render_rule)"
+check "entrypoint takes lo from the variable" grep -q 'iifname "lo" udp dport 4789 ip saddr set 169.254.7.115' <<<"$(render_rule CALICO_VXLAN_IIFNAME=lo)"
+check "compose passes the variable with eth0 default" grep -q 'CALICO_VXLAN_IIFNAME: ${CALICO_VXLAN_IIFNAME:-eth0}' "${here}/../docker-compose.yaml"
 
 echo "== debug-storage.sh (stubbed)"
 in_sandbox "bash '${T}/debug-storage.sh'" > "${T}/debug.log" 2>&1; rc=$?
