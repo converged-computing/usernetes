@@ -54,7 +54,10 @@ case "${1:-}" in
     esac ;;
   import|build) mkdir -p "${graphroot}/${driver}/stub-layer"; echo "sha256:stub" ;;
   image) [[ "$2" == inspect ]] && echo "size=1 layers=1"; exit 0 ;;
-  rmi|pull|run|system) echo "podman $*" ;;
+  run) echo "podman $*" >> "${PODMAN_STUB_LOG:-/dev/null}"; echo "deadbeefcafe" ;;
+  rm) echo "removed $2" ;;
+  exec) echo "2: eth0    inet 10.100.42.100/24 brd 10.100.42.255 scope global eth0" ;;
+  rmi|pull|system) echo "podman $*" ;;
   unshare) shift; exec "$@" ;;
   *) echo "podman $*" ;;
 esac
@@ -79,6 +82,20 @@ printf '#!/bin/bash\necho "podman-compose $*"\n' > "${T}/bin/podman-compose"
 # buildah unshare <cmd> really runs <cmd>, so the TMPDIR cleanup between roles happens.
 printf '#!/bin/bash\nif [[ "$1" == unshare ]]; then shift; exec "$@"; fi\necho "buildah $*"\n' > "${T}/bin/buildah"
 printf '#!/bin/bash\n[[ -n "${CURL_STUB_FAIL:-}" ]] && exit 7; echo "{}"\n' > "${T}/bin/curl"
+printf '#!/bin/bash\necho "pasta 2026_09_01.stub"\n' > "${T}/bin/pasta"
+cat > "${T}/bin/ip" <<'EOF'
+#!/bin/bash
+case "$*" in
+  "--json route get 1") echo '[{"dst":"1.0.0.0","gateway":"192.168.192.14","dev":"hsi0","prefsrc":"192.168.192.34"}]' ;;
+  "--json link show dev hsi0") echo '[{"ifname":"hsi0","mtu":9000}]' ;;
+  *) echo "ip $*" ;;
+esac
+EOF
+cat > "${T}/bin/jq" <<'EOF'
+#!/bin/bash
+# minimal jq: supports -r '.[0].<key>'
+python3 -c 'import json,sys; key=sys.argv[1].split(".")[-1]; print(json.load(sys.stdin)[0][key])' "$2"
+EOF
 chmod +x "${T}/bin/"*
 cp "${T}/bin/podman-compose" "${T}/home/.local/bin/"
 
@@ -86,13 +103,16 @@ cp "${T}/bin/podman-compose" "${T}/home/.local/bin/"
 sed "s#export TMPDIR=\"/tmp/\${USERNAME}\"#export TMPDIR=\"${T}/tmp\"#" "${here}/usernetes-common.sh" > "${T}/usernetes-common.sh"
 grep -q "${T}/tmp" "${T}/usernetes-common.sh" || { echo "could not patch TMPDIR in test copy"; exit 1; }
 cp "${here}/usernetes-start-control-plane.sh" "${here}/usernetes-start-worker.sh" "${here}/debug-storage.sh" "${T}/"
+# The template is a copy of the repo with check-preflight stubbed (it inspects cgroups and the engine).
+mkdir -p "${T}/template" && cp -r "${here}/../Makefile" "${here}/../Makefile.d" "${here}/../docker-compose.yaml" "${here}/../Dockerfile" "${here}/../Dockerfile.d" "${here}/../compose" "${here}/../service" "${T}/template/"
+printf '#!/bin/bash\necho "[INFO] preflight stub QUICK=${QUICK:-0}"\n' > "${T}/template/Makefile.d/check-preflight.sh"
 
 # Run a bash snippet with the stub environment. Extra env as KEY=VALUE args before the snippet.
 in_sandbox() {
     local envs=()
     while [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do envs+=("$1"); shift; done
     env -i PATH="${T}/bin:/usr/bin:/bin" HOME="${T}/home" \
-        USERNETES_RABBIT_MOUNT="${T}/nnf" USERNETES_SHARED_DIR="${T}/shared" USERNETES_TEMPLATE_PATH="${here}/.." \
+        USERNETES_RABBIT_MOUNT="${T}/nnf" USERNETES_SHARED_DIR="${T}/shared" USERNETES_TEMPLATE_PATH="${T}/template" PODMAN_STUB_LOG="${T}/podman-run.log" \
         "${envs[@]}" bash -c "$1"
 }
 # Source the common file in the sandbox and run the given snippet.
@@ -200,21 +220,32 @@ rm -rf "${T:?}/tmp"
 # Line number of the first match of a pattern in a file (0 if none).
 line_of() { grep -n -m1 "$1" "$2" | cut -d: -f1 || echo 0; }
 
+echo "== pasta binary required"
+mv "${T}/bin/pasta" "${T}/bin/pasta.off"
+in_sandbox "bash '${T}/usernetes-start-control-plane.sh'" > "${T}/nopasta.log" 2>&1; rc=$?
+check "missing pasta is an error"             test "${rc}" != 0
+check "missing pasta names where to put it"   grep -q 'pasta not found in PATH' "${T}/nopasta.log"
+check "missing pasta fails before any build"  not_grep 'usernetes_base' "${T}/nopasta.log"
+mv "${T}/bin/pasta.off" "${T}/bin/pasta"
+
 echo "== end to end (stubbed)"
 in_sandbox "timeout 20 bash '${T}/usernetes-start-control-plane.sh'" > "${T}/control-plane.log" 2>&1
 log="${T}/control-plane.log"
 check "control plane: reaches idle"           grep -q "Service will now idle indefinitely" "${log}"
 check "control plane: storage verified before builds" test "$(line_of 'podman graphroot' "${log}")" -lt "$(line_of 'usernetes_base' "${log}")"
-check "control plane: make up-built gets QUICK=1 and CNI=calico" grep -q 'make up-built CNI=calico QUICK=1' "${log}"
+check "control plane: node up before kubeadm-init" test "$(line_of 'Starting the node container' "${log}")" -lt "$(line_of 'make kubeadm-init' "${log}")"
+check "control plane: node started with pasta"  grep -q 'Starting the node container with pasta:-I,eth0,-a,10.100.' "${log}"
+check "control plane: preflight ran in quick mode" grep -q 'preflight stub QUICK=1' "${log}"
+check "control plane: pasta gets NODE_IP, gateway and host MTU" grep -qE 'pasta:-I,eth0,-a,10\.100\.[0-9]+\.100,-n,24,-g,10\.100\.[0-9]+\.1,-m,9000' "${log}"
+check "control plane: HOST_IP from the default route" grep -q 'HOST_IP=192.168.192.34' "${log}"
+check "control plane: podman run publishes the VXLAN port" grep -q -- '-p 4789:4789/udp' "${T}/podman-run.log"
+check "control plane: podman run names the compose container" grep -q -- '--name usernetes_node_1' "${T}/podman-run.log"
+check "control plane: podman run passes CNI=calico" grep -q -- '-e CNI=calico' "${T}/podman-run.log"
+check "control plane: no make up-built"          not_grep 'make up-built' "${log}"
+check "control plane: no VXLAN fixups on this branch" not_grep 'VXLAN fixups' "${log}"
 check "control plane: make sees XDG_CONFIG_HOME" grep -q "make kubeadm-init .*STORAGE=${rabbit}/usernetes/config" "${log}"
 check "control plane: runs from the copied checkout" grep -q "make kubeadm-init .*PWD=${T}/tmp/usernetes" "${log}"
 check "control plane: join-command published"  test -f "${T}/shared/join-command"
-check "control plane: VXLAN fixups applied after up" grep -q "Applying rootless-podman VXLAN fixups" "${log}"
-check "control plane: fixups run inside the node" grep -q "podman-compose exec -T node bash -c" "${log}"
-check "control plane: fixups after up-built"    test "$(line_of 'make up-built' "${log}")" -lt "$(line_of 'VXLAN fixups' "${log}")"
-check "control plane: fixups applied twice"     test "$(grep -c 'Applying rootless-podman VXLAN fixups' "${log}")" == 2
-check "control plane: second fixup after kubeadm-init" test "$(line_of 'make kubeadm-init' "${log}")" -lt "$(grep -n 'VXLAN fixups' "${log}" | tail -1 | cut -d: -f1)"
-check "control plane: fixups persist rp_filter"  grep -q '99-usernetes.conf' "${log}"
 check "control plane: source_env.sh survives cleanup" test -f "${T}/tmp/usernetes/source_env.sh"
 check "control plane: source_env.sh written before builds" test "$(line_of 'Writing .*source_env.sh' "${log}")" -lt "$(line_of 'usernetes_base' "${log}")"
 [[ "${verbose}" == "1" ]] && sed 's/^/    /' "${log}"
@@ -224,9 +255,8 @@ log="${T}/worker.log"
 check "worker: reaches idle"                  grep -q "Service will now idle indefinitely" "${log}"
 check "worker: checks the API server first"    grep -q "API server is reachable" "${log}"
 check "worker: joins with the shared join-command" grep -q "kubeadm join stub" "${log}"
-check "worker: VXLAN fixups applied twice"    test "$(grep -c 'Applying rootless-podman VXLAN fixups' "${log}")" == 2
-check "worker: second fixup after kubeadm-join" test "$(line_of 'make kubeadm-join' "${log}")" -lt "$(grep -n 'VXLAN fixups' "${log}" | tail -1 | cut -d: -f1)"
-check "worker: make up-built gets QUICK=1 and CNI=calico" grep -q 'make up-built CNI=calico QUICK=1' "${log}"
+check "worker: node started with pasta"         grep -q 'Starting the node container with pasta:' "${log}"
+check "worker: no VXLAN fixups on this branch"  not_grep 'VXLAN fixups' "${log}"
 check "worker: source_env.sh written"         test -f "${T}/tmp/usernetes/source_env.sh"
 [[ "${verbose}" == "1" ]] && sed 's/^/    /' "${log}"
 

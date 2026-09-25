@@ -21,6 +21,9 @@
 #   USERNETES_STORAGE_DRIVER   containers/storage driver written to storage.conf
 #                              (default: vfs).
 #   USERNETES_RUNROOT          podman runroot (default: <rabbit>/usernetes/run-<uid>/containers).
+#   USERNETES_PASTA_MTU        MTU for the node's eth0 under pasta (default: the MTU
+#                              of the host's default-route interface, so VXLAN does
+#                              not fragment).
 #   USERNETES_RUNROOT_SYMLINK  Set to 1 to reference the runroot through a short
 #                              symlink ${TMPDIR}/.nnf -> <rabbit>/usernetes. Only
 #                              needed if podman rejects the runroot as longer than
@@ -114,6 +117,12 @@ usernetes_check_engine() {
         local compose_path
         compose_path=$(command -v podman-compose) || error_exit "podman-compose not found in PATH (expected in ${LOCAL_BIN_DIR})."
         log "    Found podman-compose at ${compose_path}"
+        # This branch runs the node with --network pasta. podman 4.x looks the binary
+        # up in PATH; a static build from https://passt.top/builds/latest/x86_64/
+        # dropped into ${LOCAL_BIN_DIR} is enough.
+        local pasta_path
+        pasta_path=$(command -v pasta) || error_exit "pasta not found in PATH. Put a pasta binary in ${LOCAL_BIN_DIR} (static builds: https://passt.top/builds/latest/x86_64/)."
+        log "    Found pasta at ${pasta_path} ($("${pasta_path}" --version 2>&1 | head -1))"
     fi
 }
 
@@ -326,39 +335,67 @@ usernetes_cleanup_stale() {
     "${container_runtime_path}" volume rm usernetes_node-etc -f || log "      Volume 'usernetes_node-etc' not found."
 }
 
-# Fixups inside the node container for Calico VXLAN under rootless podman.
-# Call after `make up-built` (the entrypoint must have created its nft table)
-# and again after kubeadm init/join: something in the node resets rp_filter to
-# strict after the entrypoint, so it is set live, persisted in sysctl.d for
-# systemd-sysctl, and re-applied once the node has fully booted. Idempotent.
+# Bring the node container up with pasta instead of the podman bridge network
+# (podman 4.x cannot use pasta for its rootless bridge namespace; that needs
+# podman >= 5). This replaces `make up-built`: the container gets the same name,
+# volumes, ports, environment and sysctls as docker-compose.yaml, so every other
+# make target keeps working through `podman-compose exec node`.
 #
-# podman's rootless port forwarder runs inside the container's network
-# namespace and connects to the container's own IP, so VXLAN datagrams from
-# other nodes arrive on lo with a local source address. The upstream entrypoint
-# rewrites the source to Felix's sentinel address only for packets on eth0, so
-# Felix drops everything as coming from a non-allowed host. Extend the rewrite
-# to lo, and make rp_filter loose: a sentinel-sourced packet on lo fails strict
-# reverse-path filtering (the route to it is the default route via eth0).
-# The effective rp_filter is max(all, interface), so "all" covers vxlan.calico
-# once Calico creates it. Verify with service/check-vxlan.sh.
-usernetes_node_vxlan_fixups() {
-    if [[ "${CNI}" != "calico" ]]; then
-        return
-    fi
-    local compose port
-    compose=$(./Makefile.d/detect-container-engine.sh COMPOSE)
-    port="${PORT_CALICO:-4789}"
-    log "🩹 Applying rootless-podman VXLAN fixups inside the node container"
-    ${compose} exec -T node bash -c "
-        if ! nft list chain ip u7s-calico-vxlan prerouting 2>/dev/null | grep -q 'iifname \"lo\"'; then
-            nft add rule ip u7s-calico-vxlan prerouting iifname \"lo\" udp dport ${port} ip saddr set 169.254.7.115
-        fi
-        for f in all default lo eth0 vxlan.calico; do [ -e /proc/sys/net/ipv4/conf/\$f/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/\$f/rp_filter; done
-        printf 'net.ipv4.conf.all.rp_filter = 2\\nnet.ipv4.conf.default.rp_filter = 2\\n' > /etc/sysctl.d/99-usernetes.conf
-        echo \"rp_filter: all=\$(cat /proc/sys/net/ipv4/conf/all/rp_filter) lo=\$(cat /proc/sys/net/ipv4/conf/lo/rp_filter) eth0=\$(cat /proc/sys/net/ipv4/conf/eth0/rp_filter)\"
-        nft list chain ip u7s-calico-vxlan prerouting | grep 'ip saddr set'
-    " 2>&1 | grep -vE "^(podman-compose version|\['podman'|using podman version|podman exec |exit code: 0)" | sed 's/^/      /' \
-        || log "      WARNING: VXLAN fixups failed; cross-node pod traffic will not work. Run service/check-vxlan.sh --fix"
+# pasta options follow the upstream README's Podman v6 recipe: a dedicated
+# address (NODE_IP on NODE_SUBNET, gateway .1) instead of a copy of the host's,
+# so the entrypoint's NAT rules and kubeadm-config keep their meaning; the
+# interface is named eth0 like on the bridge; the MTU matches the host's
+# default-route interface so VXLAN packets are not fragmented.
+#
+# Published ports are forwarded by pasta itself, which delivers inbound packets
+# on eth0 with the real remote source address. That is the path the upstream
+# entrypoint's eth0-only source rewrite was written for, so this branch applies
+# no VXLAN fixups: the point is to test upstream's design as-is under pasta.
+usernetes_node_up() {
+    QUICK=1 ./Makefile.d/check-preflight.sh || error_exit "check-preflight failed"
+
+    # Same derivations as the Makefile, so the values match what `make` passes to the container later.
+    local host_ip node_subnet node_ip node_gw node_name host_dev mtu
+    host_ip="${HOST_IP:-$(ip --json route get 1 | jq -r '.[0].prefsrc')}"
+    node_subnet="${NODE_SUBNET:-$(./Makefile.d/node-subnet.sh)}"
+    node_ip="${node_subnet%.0/24}.100"
+    node_gw="${node_subnet%.0/24}.1"
+    node_name="${NODE_NAME:-u7s-$(hostname)}"
+    host_dev=$(ip --json route get 1 | jq -r '.[0].dev')
+    mtu="${USERNETES_PASTA_MTU:-$(ip --json link show dev "${host_dev}" | jq -r '.[0].mtu')}"
+    local port_etcd="${PORT_ETCD:-2379}" port_api="${PORT_KUBE_APISERVER:-6443}" port_kubelet="${PORT_KUBELET:-10250}"
+    local port_flannel="${PORT_FLANNEL:-8472}" port_calico="${PORT_CALICO:-4789}" port_typha="${PORT_CALICO_TYPHA:-5473}"
+    local pod_subnet="${POD_SUBNET:-10.244.0.0/16}" service_subnet="${SERVICE_SUBNET:-10.96.0.0/16}"
+    local pasta_net="pasta:-I,eth0,-a,${node_ip},-n,24,-g,${node_gw},-m,${mtu}"
+
+    log "🍝 Starting the node container with ${pasta_net}"
+    log "    HOST_IP=${host_ip} NODE_IP=${node_ip} NODE_NAME=${node_name} host interface ${host_dev} mtu ${mtu}"
+    "${container_runtime_path}" rm -f usernetes_node_1 >/dev/null 2>&1 || true
+    "${container_runtime_path}" run -d --name usernetes_node_1 \
+        --hostname "${node_name}" --privileged --restart always \
+        --network "${pasta_net}" \
+        -p "${port_etcd}:${port_etcd}" \
+        -p "${port_api}:${port_api}" \
+        -p "${port_kubelet}:${port_kubelet}" \
+        -p "${port_flannel}:${port_flannel}/udp" \
+        -p "${port_calico}:${port_calico}/udp" \
+        -p "${port_typha}:5473" \
+        -v "$(pwd):/usernetes:ro" -v /boot:/boot:ro -v /lib/modules:/lib/modules:ro \
+        -v usernetes_node-var:/var -v usernetes_node-opt:/opt -v usernetes_node-etc:/etc \
+        --tmpfs /run --tmpfs /tmp \
+        -w /usernetes \
+        -e KUBECONFIG=/etc/kubernetes/admin.conf \
+        -e HOST_IP="${host_ip}" -e NODE_IP="${node_ip}" \
+        -e POD_SUBNET="${pod_subnet}" -e SERVICE_SUBNET="${service_subnet}" \
+        -e CNI="${CNI}" -e FLANNEL_IGNORE_IP_CHECKSUM= -e PORT_CALICO="${port_calico}" \
+        --sysctl net.ipv4.ip_forward=1 \
+        --label io.podman.compose.project=usernetes --label io.podman.compose.service=node \
+        --label com.docker.compose.project=usernetes --label com.docker.compose.service=node \
+        usernetes_node \
+        || error_exit "podman run of the node container failed"
+    sleep 3
+    log "    pasta process: $(pgrep -u "$(id -u)" -a -x pasta | head -1 | cut -c1-200)"
+    "${container_runtime_path}" exec usernetes_node_1 ip -4 -o addr show dev eth0 2>&1 | sed 's/^/      /'
 }
 
 # Everything both roles do before the role-specific kubeadm steps.

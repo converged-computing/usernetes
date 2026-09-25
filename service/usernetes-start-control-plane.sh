@@ -16,22 +16,14 @@ source "${here}/usernetes-common.sh"
 # builds, and stale cleanup. Leaves us in ${TMPDIR}/usernetes.
 usernetes_common_setup control-plane
 
-# quick mode disables checking rp_filter
-log "    ⬆️ Bringing up the Usernetes node(s) with 'make up-built'"
-if ! QUICK=1 make up-built; then
-    error_exit "Failed to bring up Usernetes with 'make up-built'."
-fi
-sleep 3
-usernetes_node_vxlan_fixups
+log "    ⬆️ Bringing up the Usernetes node with pasta networking"
+usernetes_node_up
 
 log "🔐 Running kubeadm-init with 'make kubeadm-init'"
 if ! make kubeadm-init; then
     error_exit "Failed 'make kubeadm-init'."
 fi
 sleep 3
-
-# Re-apply now that the node has fully booted (see usernetes_node_vxlan_fixups).
-usernetes_node_vxlan_fixups
 
 log "🥷 Creating kubeconfig with 'make kubeconfig'"
 if ! make kubeconfig; then

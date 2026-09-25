@@ -22,13 +22,8 @@ fi
 # builds, and stale cleanup. Leaves us in ${TMPDIR}/usernetes.
 usernetes_common_setup worker
 
-# quick mode disables checking rp_filter, which only matters for flannel
-log "    ⬆️ Bringing up the Usernetes node(s) with 'make up-built'"
-if ! QUICK=1 make up-built; then
-    error_exit "Failed to bring up Usernetes with 'make up-built'."
-fi
-sleep 3
-usernetes_node_vxlan_fixups
+log "    ⬆️ Bringing up the Usernetes node with pasta networking"
+usernetes_node_up
 
 # Copy the join-command
 cp "${USERNETES_SHARED_DIR}/join-command" join-command
@@ -55,9 +50,6 @@ log "🤝 Joining the cluster with 'make kubeadm-join'"
 if ! make kubeadm-join; then
     error_exit "Failed 'make kubeadm-join'."
 fi
-
-# Re-apply now that the node has fully booted (see usernetes_node_vxlan_fixups).
-usernetes_node_vxlan_fixups
 
 log "🎉 Usernetes worker node setup complete."
 log "    To use podman against this node's storage: source ${TMPDIR}/usernetes/source_env.sh"

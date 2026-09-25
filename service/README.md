@@ -43,9 +43,15 @@ If podman rejects the runroot as longer than 50 characters, set `USERNETES_RUNRO
 
 The driver defaults to `vfs`; set `USERNETES_STORAGE_DRIVER=overlay` to try native rootless overlay.
 
-## Rootless podman and Calico VXLAN
+## Networking: pasta instead of slirp4netns (this branch)
 
-podman's rootless port forwarder runs inside the node container's network namespace and connects to the container's own IP, so VXLAN datagrams from other nodes arrive on `lo` with a local source address, not on `eth0`. The upstream entrypoint rewrites the source to Felix's sentinel address for `eth0` only, so Felix drops every cross-node packet as coming from a non-allowed host while every pod looks healthy. The services apply two fixups inside the node container right after `make up-built`: the same rewrite for `lo`, and `rp_filter=2` (a sentinel-sourced packet on `lo` fails strict reverse-path filtering). This replaces the sysctls from the earlier test-calico branch. `service/check-vxlan.sh` verifies it and `--fix` applies it to a running node.
+This branch tests the upstream Calico design as-is under pasta. Podman 4.x cannot use pasta for its rootless bridge namespace (that needs podman 5), so the services do not run `make up-built`; they start the node container themselves with `podman run --network pasta:...`, using the same name, volumes, ports, environment and sysctls as `docker-compose.yaml`, so every other make target keeps working through `podman-compose exec node`. pasta forwards the published ports itself and delivers inbound packets on `eth0` with the real remote source address, which is the path the upstream entrypoint's eth0-only VXLAN source rewrite was written for. No lo rewrite and no rp_filter change are applied on this branch.
+
+The pasta options mirror the upstream README's Podman v6 recipe: a dedicated address `NODE_IP` on `NODE_SUBNET` with gateway `.1` rather than a copy of the host's address, interface name `eth0`, and the MTU of the host's default-route interface (`USERNETES_PASTA_MTU` overrides it).
+
+pasta is not installed on hetchy. podman 4.x looks it up in `PATH`, so a static build from https://passt.top/builds/latest/x86_64/ in `~/.local/bin` is enough; the service refuses to start without it.
+
+To confirm the delivery path once the cluster is up, `check-vxlan.sh` on either node should show `in-iif-eth0` growing and `in-iif-lo` at zero, and Felix's accept counter climbing.
 
 ## Debugging and testing
 
