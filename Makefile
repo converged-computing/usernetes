@@ -23,6 +23,8 @@ export PORT_KUBE_APISERVER ?= 6443
 export POD_SUBNET ?= 10.244.0.0/16
 export SERVICE_SUBNET ?= 10.96.0.0/16
 
+HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
 # HOSTNAME is the name of the physical host
 export HOSTNAME ?= $(shell hostname)
 # HOST_IP is the IP address of the physical host. Accessible from other hosts.
@@ -38,9 +40,7 @@ export NODE_SUBNET ?= $(shell $(CURDIR)/Makefile.d/node-subnet.sh)
 export NODE_IP := $(subst .0/24,.100,$(NODE_SUBNET))
 
 export CONTAINER_ENGINE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh CONTAINER_ENGINE)
-
 export CONTAINER_ENGINE_TYPE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh CONTAINER_ENGINE_TYPE)
-
 COMPOSE ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh COMPOSE)
 
 export FLANNEL_IGNORE_IP_CHECKSUM ?= $(shell $(CURDIR)/Makefile.d/detect-container-engine.sh FLANNEL_IGNORE_IP_CHECKSUM)
@@ -102,7 +102,15 @@ render: check-preflight
 
 .PHONY: up
 up: check-preflight
-	$(COMPOSE) up --build -d
+	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
+	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/docker-compose.yaml
+	$(COMPOSE) up -d
+
+.PHONY: up-built
+up-built: check-preflight
+	# Podman creates cni files in a shared location, this ensures unique names that do not clobbed one another
+	sed -i "s/default_network/$(HOSTNAME)/g" $(HERE)/docker-compose.yaml
+	$(COMPOSE) -f $(HERE)/docker-compose.yaml -f $(HERE)/compose/prebuilt-node.yaml up -d
 
 .PHONY: down
 down:
@@ -163,6 +171,8 @@ sync-external-ip:
 
 .PHONY: kubeadm-join
 kubeadm-join:
+	# Our kernel is too old for usernetes, so we need this
+	sed -i "s/--token/--ignore-preflight-errors=all --token/g" $(HERE)/join-command
 	$(NODE_SHELL) /bin/bash /usernetes/join-command
 	@echo "# Run 'make sync-external-ip' on the control plane"
 
@@ -175,7 +185,15 @@ kubeadm-reset:
 install-cni:
 	$(NODE_SHELL) /usernetes/Makefile.d/install-$(CNI).sh
 
-.PHONY: install-flannel install-calico
-install-flannel install-calico:
+.PHONY: install-calico
+install-calico:
 	@echo >&2 'DEPRECATED: Use `make install-cni` instead'
 	$(NODE_SHELL) /usernetes/Makefile.d/$@.sh
+
+.PHONY: install-flannel
+install-flannel:
+	# Kubernetes 1.30.x removed the check for br_netfilter from kubeadm.
+	# Flannel over version 0.25 checks for br_netfilter, which won't be in the podman node.
+	# We don't actually need it there, just on the physical node, so we use newer K8s and older flannel
+	$(NODE_SHELL) kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.1/kube-flannel.yml
+	#$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh

@@ -1,0 +1,30 @@
+[Unit]
+Description=User Space Kubernetes Control Plane (Usernetes)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/workspace/usernetes/service/usernetes-start-control-plane.sh podman
+LimitMEMLOCK=infinity
+# Optional overrides (see service/usernetes-common.sh for the full list).
+# Podman storage is discovered under /mnt/nnf/<uuid>-N on each node; set
+# USERNETES_STORAGE_ROOT to bypass discovery, e.g. on a node without a rabbit.
+# Environment="USERNETES_STORAGE_ROOT=/tmp/%u/podman-storage"
+# Environment="USERNETES_STORAGE_DRIVER=vfs"
+# Environment="USERNETES_RUNROOT_SYMLINK=1"
+# Environment="USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-wip"
+
+# Standard output and error
+# Customize this to where you want it.  
+StandardOutput=file:/usr/workspace/usernetes/control-plane.log
+StandardError=file:/usr/workspace/usernetes/control-plane.log
+
+# KillMode=process is important. When the service stops, systemd will only kill
+# the main process (sleep infinity). The Kubernetes components run inside containers
+# managed by Podman/Docker, which `make down-v` (or manual podman commands) should handle
+# on a clean shutdown. If the node is just "cleaned up" (deallocated), then everything dies anyway.
+KillMode=process
+
+# Start when the user's session starts
+[Install]
+WantedBy=default.target
