@@ -16,8 +16,9 @@ nodeRegistration:
   # The port numbers here are the kubeadm constants, not `PORT_ETCD`; kubeadm
   # always checks 2379 and 2380 regardless of the configured etcd port.
   ignorePreflightErrors:
-  - Port-2379
-  - Port-2380
+  - all
+  #- Port-2379
+  #- Port-2380
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration

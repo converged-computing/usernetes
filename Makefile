@@ -171,6 +171,8 @@ sync-external-ip:
 
 .PHONY: kubeadm-join
 kubeadm-join:
+	# Our kernel is too old for usernetes, so we need this
+	sed -i "s/--token/--ignore-preflight-errors=all --token/g" $(HERE)/join-command
 	$(NODE_SHELL) /bin/bash /usernetes/join-command
 	@echo "# Run 'make sync-external-ip' on the control plane"
 
@@ -183,7 +185,15 @@ kubeadm-reset:
 install-cni:
 	$(NODE_SHELL) /usernetes/Makefile.d/install-$(CNI).sh
 
-.PHONY: install-flannel install-calico
-install-flannel install-calico:
+.PHONY: install-calico
+install-calico:
 	@echo >&2 'DEPRECATED: Use `make install-cni` instead'
 	$(NODE_SHELL) /usernetes/Makefile.d/$@.sh
+
+.PHONY: install-flannel
+install-flannel:
+	# Kubernetes 1.30.x removed the check for br_netfilter from kubeadm.
+	# Flannel over version 0.25 checks for br_netfilter, which won't be in the podman node.
+	# We don't actually need it there, just on the physical node, so we use newer K8s and older flannel
+	$(NODE_SHELL) kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.1/kube-flannel.yml
+	#$(NODE_SHELL) /usernetes/Makefile.d/install-flannel.sh
