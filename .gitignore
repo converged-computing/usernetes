@@ -2,3 +2,4 @@
 /kubectl
 /join-command
 /kubernetes/kubeconfig
+*.pem

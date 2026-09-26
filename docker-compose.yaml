@@ -3,12 +3,14 @@
 ---
 services:
   node:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.d/Dockerfile.base
     hostname: ${NODE_NAME}
     privileged: true
     restart: always
     networks:
-      default:
+      default_network:
         ipv4_address: ${NODE_IP}
     ports:
       # <host>:<container>
@@ -66,7 +68,7 @@ services:
       "nerdctl/bypass4netns-ignore-bind": "true"
       "nerdctl/bypass4netns-ignore-subnets": "${BYPASS4NETNS_IGNORE_SUBNETS:-}"
 networks:
-  default:
+  default_network:
     ipam:
       config:
         # Each of the nodes has to have a different IP.
