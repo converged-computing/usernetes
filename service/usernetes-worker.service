@@ -1,0 +1,25 @@
+[Unit]
+Description=User Space Kubernetes Worker (Usernetes)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/workspace/usernetes/service/usernetes-start-worker.sh podman
+# Optional overrides (see service/usernetes-common.sh for the full list).
+# Podman storage is discovered under /mnt/nnf/<uuid>-N on each node; set
+# USERNETES_STORAGE_ROOT to bypass discovery, e.g. on a node without a rabbit.
+# Environment="USERNETES_STORAGE_ROOT=/tmp/%u/podman-storage"
+# Environment="USERNETES_STORAGE_DRIVER=vfs"
+# Environment="USERNETES_RUNROOT_SYMLINK=1"
+# Environment="USERNETES_TEMPLATE_PATH=/usr/workspace/usernetes/usernetes-wip"
+LimitMEMLOCK=infinity
+
+# Logging
+StandardOutput=file:/usr/workspace/usernetes/worker.log
+StandardError=file:/usr/workspace/usernetes/worker.log
+KillMode=process
+
+# Start when the user's session starts
+[Install]
+WantedBy=default.target
+
