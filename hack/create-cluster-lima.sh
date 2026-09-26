@@ -15,7 +15,7 @@ set -eux -o pipefail
 : "${PORT_CALICO_TYPHA:=5473}"
 : "${PORT_KUBELET:=10250}"
 
-guest_home="/home/${USER}.guest"
+guest_home="/home/runner.guest"
 
 if [ "$(id -u)" -le 1000 ]; then
 	# In --plain mode, UID has to be >= 1000 to populate subuids
@@ -27,6 +27,9 @@ fi
 for host in host0 host1; do
 	# Set --plain to minimize Limaism
 	${LIMACTL} start --plain --network lima:user-v2 --name="${host}" ${LIMACTL_CREATE_ARGS} "${LIMA_TEMPLATE}"
+	echo "LISTING ${host}"
+	${LIMACTL} shell "${host}" ls /
+	${LIMACTL} shell "${host}" ls /home
 	${LIMACTL} copy -r "$(pwd)" "${host}:${guest_home}/usernetes"
 	${LIMACTL} shell "${host}" sudo CONTAINER_ENGINE="${CONTAINER_ENGINE}" CONTAINER_ENGINE_ROOTFUL="${CONTAINER_ENGINE_ROOTFUL}" "${guest_home}/usernetes/init-host/init-host.root.sh"
 	# Terminate the current session so that the cgroup delegation takes an effect. This command exits with status 255 as SSH terminates.
@@ -52,8 +55,8 @@ done
 ${LIMACTL} shell host0 ${SERVICE_PORTS} CNI="${CNI}" CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" kubeadm-init install-cni kubeconfig join-command
 
 # Let host1 join the cluster
-${LIMACTL} copy host0:~/usernetes/join-command ./join-command
-${LIMACTL} copy ./join-command host1:~/usernetes/join-command
+${LIMACTL} copy host0:${guest_home}/usernetes/join-command ./join-command
+${LIMACTL} copy ./join-command host1:${guest_home}/usernetes/join-command
 ${LIMACTL} shell host1 ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" kubeadm-join
 ${LIMACTL} shell host0 ${SERVICE_PORTS} CONTAINER_ENGINE="${CONTAINER_ENGINE}" make -C "${guest_home}/usernetes" sync-external-ip
 
